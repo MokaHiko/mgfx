@@ -3,14 +3,17 @@
 
 #include <mx/mx.h>
 
-#define MGFX_SUCCESS ((uint16_t)0)
-
 typedef MX_API struct {
 	char name[256];
 	void* nwh;
-} mgfx_init_info;
+	int width;
+	int height;
+} MgfxInitInfo;
 
-MX_API int mgfx_init(const mgfx_init_info* info);
+// @Returns MGFX_SUCCESS(0) if successful.
+MX_API int mgfx_init(const MgfxInitInfo* info);
+
+MX_API void mgfx_frame();
 
 MX_API void mgfx_shutdown();
 
@@ -18,10 +21,10 @@ static const uint16_t mgfx_invalid_handle = UINT16_MAX;
 #define MGFX_INVALID_HANDLE ((uint16_t)mgfx_invalid_handle)
 
 #define MGFX_HANDLE(name)                       \
-  typedef MX_API struct {                       \
+  typedef MX_API struct name {                  \
     uint16_t idx;				\
   } name;                                       \
 
-MGFX_HANDLE(mgfx_vb)
+MGFX_HANDLE(MgfxVertexBuffer)
 
 #endif
