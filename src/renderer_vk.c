@@ -140,7 +140,9 @@ int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count, co
   return MGFX_SUCCESS;
 }
 
-void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, void* nwh, VkExtent2D* extent) {
+void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps,
+                                void* nwh,
+                                VkExtent2D* extent) {
   if(surface_caps->currentExtent.width != UINT32_MAX) {
       *extent = surface_caps->currentExtent;
   } else {
@@ -157,24 +159,23 @@ void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, vo
 };
 
 void vk_cmd_transition_image(VkCommandBuffer cmd,
-                             VkImage target,
+                             ImageVk* image,
                              VkImageAspectFlags aspect_flags,
-                             VkImageLayout old,
-                             VkImageLayout new) {
+                             VkImageLayout new_layout) {
   VkImageMemoryBarrier img_barrier = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
     .pNext = NULL,
     .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
     .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
 
-    .oldLayout = old,
-    .newLayout = new,
+    .oldLayout = image->layout,
+    .newLayout = new_layout,
 
     /*// Assuming single queue*/
     /*.srcQueueFamilyIndex,*/
     /*.dstQueueFamilyIndex,*/
 
-    .image = target,
+    .image = image->handle,
     .subresourceRange = {
       .aspectMask = aspect_flags,
       .baseMipLevel = 0,
@@ -191,4 +192,40 @@ void vk_cmd_transition_image(VkCommandBuffer cmd,
                        0, NULL,
                        0, NULL,
                        1, &img_barrier);
+
+  image->layout = new_layout;
+}
+
+void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
+                                const ImageVk* src,
+                                VkImageAspectFlags aspect,
+                                ImageVk* dst) {
+  VkImageBlit blit = {
+    .srcSubresource = {
+      .aspectMask = aspect,
+      .mipLevel = 0,
+      .baseArrayLayer = 0,
+      .layerCount = 1,
+    },
+    .srcOffsets = {{}, {src->extent.width, src->extent.height, 1.0f}},
+    .dstSubresource = {
+      .aspectMask = aspect,
+      .mipLevel = 0,
+      .baseArrayLayer = 0,
+      .layerCount = 1,
+    },
+    {{}, {dst->extent.width, dst->extent.height, 1.0f}},
+  }; vkCmdBlitImage(cmd, src->handle, src->layout, dst->handle, dst->layout, 1, &blit, VK_FILTER_LINEAR);
+};
+
+void vk_cmd_clear_image(VkCommandBuffer cmd,
+                        ImageVk* target,
+                        const VkImageSubresourceRange *range,
+                        const VkClearColorValue *clear) {
+  vkCmdClearColorImage(cmd,
+                       target->handle,
+                       target->layout,
+                       clear,
+                       1,
+                       range);
 }

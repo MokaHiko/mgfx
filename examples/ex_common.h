@@ -10,6 +10,7 @@ int load_shader_from_path(const char* file_path, ShaderVk* shader);
 int mgfx_example_app();
 
 extern void mgfx_example_init();
+extern void mgfx_example_update();
 extern void mgfx_example_shutdown();
 
 #endif

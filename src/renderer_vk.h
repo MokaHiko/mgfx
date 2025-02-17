@@ -32,29 +32,32 @@ int choose_physical_device_vk(VkInstance instance,
                           VkPhysicalDevice* phys_device,
                           mx_arena* arena);
 
-void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, void* nwh, VkExtent2D* extent);
+void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, 
+                                void* nwh, 
+                                VkExtent2D* extent);
+typedef struct FrameVk {
+  VkCommandPool cmd_pool;
+  VkCommandBuffer cmd;
 
-// Commands.
-void vk_cmd_transition_image(VkCommandBuffer cmd,
-                             VkImage target,
-                             VkImageAspectFlags aspect_flags,
-                             VkImageLayout old,
-                             VkImageLayout new);
+  VkSemaphore render_semaphore;
+  VkFence render_fence;
 
-typedef struct {
-  VkImage image;
-  VkImageView view;
+  VkSemaphore swapchain_semaphore;
+} FrameVk;
 
-  VmaAllocation alloc;
-} TextureVk;
+typedef struct ImageVk {
+  VkImage handle;
+  VkFormat format;
 
-void texture_create(TextureVk* texture);
-void texture_destroy(TextureVk* texture);
+  VkImageLayout layout;
+  VkExtent3D extent;
+} ImageVk;
 
 enum {K_MAX_SWAPCHAIN_IMAGES = 4};
 typedef struct SwapchainVk {
-  TextureVk textures[K_MAX_SWAPCHAIN_IMAGES];
-  uint32_t texture_count;
+  ImageVk images[K_MAX_SWAPCHAIN_IMAGES];
+  VkImageView image_views[K_MAX_SWAPCHAIN_IMAGES];
+  uint32_t image_count;
 
   VkExtent2D extent;
   VkSwapchainKHR handle;
@@ -69,24 +72,52 @@ void swapchain_destroy(SwapchainVk* swapchain);
 
 typedef struct ShaderVk {
   VkShaderModule module;
+  VkDescriptorSetLayoutBinding bindings;
 } ShaderVk;
 
 void shader_create(size_t length, const char* code, ShaderVk* shader);
 void shader_destroy(ShaderVk* shader);
+
+typedef struct TextureVk {
+  ImageVk image;
+  VmaAllocation allocation;
+} TextureVk;
+
+void texture_create_2d(uint32_t width,
+                    uint32_t height,
+                    VkFormat format,
+                    VkImageUsageFlags usage,
+                    TextureVk* texture);
+void texture_create_view_2d(const TextureVk* texture, const VkImageAspectFlags aspect, VkImageView* view);
+void texture_destroy(TextureVk *texture);
 
 typedef struct ProgramVk {
   VkPipelineLayout layout;
   VkPipeline pipeline;
 } ProgramVk;
 
-typedef struct FrameVk {
-  VkCommandPool cmd_pool;
+// Commands.
+void vk_cmd_transition_image(VkCommandBuffer cmd,
+                             ImageVk* image,
+                             VkImageAspectFlags aspect_flags,
+                             VkImageLayout new);
+
+void vk_cmd_clear_image(VkCommandBuffer cmd,
+                        ImageVk* target,
+                        const VkImageSubresourceRange *range,
+                        const VkClearColorValue *clear);
+
+void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
+                                const ImageVk* src,
+                                VkImageAspectFlags aspect,
+                                ImageVk* dst);
+
+// TODO: Remove
+//TODO: Change to encoder
+typedef struct DrawCtx {
   VkCommandBuffer cmd;
-
-  VkSemaphore render_semaphore;
-  VkFence render_fence;
-
-  VkSemaphore swapchain_semaphore;
-} FrameVk;
+  ImageVk* frame_target;
+} DrawCtx;
+extern void mgfx_example_updates(const DrawCtx* frame);
 
 #endif

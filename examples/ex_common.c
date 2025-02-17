@@ -54,8 +54,8 @@ int mgfx_example_app() {
 	}
 
 	mgfx_example_shutdown();
-
 	mgfx_shutdown();
+
 	glfwDestroyWindow(s_window);
 	glfwTerminate();
 	return 0;

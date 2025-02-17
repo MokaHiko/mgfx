@@ -2,12 +2,18 @@
 #include "mgfx/defines.h"
 
 #include "renderer_vk.h"
+#include "vma/vk_mem_alloc.h"
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+
 #ifdef MX_MACOS
-#include <vulkan/vulkan_beta.h>
-#include <vulkan/vulkan_metal.h>
+    #include <vulkan/vulkan_beta.h>
+    #include <vulkan/vulkan_metal.h>
+#elif defined(MX_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+    #include <vulkan/vulkan_win32.h>
 #endif
 
 #include <mx/mx_memory.h>
@@ -26,9 +32,12 @@ const char* k_req_exts[] = {
 #ifdef MX_DEBUG
   VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #endif
+
 #ifdef MX_MACOS
   VK_EXT_METAL_SURFACE_EXTENSION_NAME,
   VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+#elif defined(MX_WIN32)
+  VK_KHR_WIN32_SURFACE_EXTENSION_NAME
 #endif
 };
 const int k_req_ext_count = sizeof(k_req_exts) / sizeof(const char*);
@@ -92,20 +101,12 @@ enum {MGFX_MAX_FRAME_OVERLAP = 2};
 static FrameVk s_frames[MGFX_MAX_FRAME_OVERLAP];
 static uint32_t s_frame_idx = 0;
 
-void texture_create(TextureVk* texture) {
-}
-
-void texture_destroy(TextureVk *texture) {
-  vkDestroyImage(s_device, texture->image, NULL);
-  vkDestroyImageView(s_device, texture->view, NULL);
-}
-
 int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, SwapchainVk* swapchain, mx_arena* memory_arena) {
-  mx_arena* arena = memory_arena;
+  mx_arena* local_arena = memory_arena;
 
   if(memory_arena == NULL) {
     mx_arena temp_arena = mx_arena_alloc(MX_KB);
-    arena = &temp_arena;
+    local_arena = &temp_arena;
   } 
 
   swapchain->extent.width = width;
@@ -150,14 +151,14 @@ int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, Swap
 
   VK_CHECK(vkCreateSwapchainKHR(s_device, &swapchain_info, NULL, &swapchain->handle));
 
-  vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->texture_count, NULL);
-  if(swapchain->texture_count > K_MAX_SWAPCHAIN_IMAGES) {
+  vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->image_count, NULL);
+  if(swapchain->image_count > K_MAX_SWAPCHAIN_IMAGES) {
     printf("Requested swapchain images larger than max capacity!");
     return -1;
   }
 
-  VkImage* images = mx_arena_push(arena, swapchain->texture_count * sizeof(VkImage));
-  vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->texture_count, images);
+  VkImage* images = mx_arena_push(local_arena, swapchain->image_count * sizeof(VkImage));
+  vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->image_count, images);
 
   VkImageViewCreateInfo sc_img_view_info = {};
   sc_img_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -180,23 +181,26 @@ int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, Swap
     .layerCount= 1,
   };
 
-  for(uint32_t i = 0; i < swapchain->texture_count; i++) {
-    swapchain->textures[i].image = images[i];
-    sc_img_view_info.image = swapchain->textures[i].image;
+  for(uint32_t i = 0; i < swapchain->image_count; i++) {
+    swapchain->images[i].handle = images[i];
+    swapchain->images[i].format = k_surface_fmt;
+    swapchain->images[i].extent = (VkExtent3D) {width, height, 1.0f };
+    swapchain->images[i].format = k_surface_fmt;
+    sc_img_view_info.image = swapchain->images[i].handle;
 
-    vkCreateImageView(s_device, &sc_img_view_info, NULL, &swapchain->textures[i].view);
+    vkCreateImageView(s_device, &sc_img_view_info, NULL, &swapchain->image_views[i]);
   }
 
   if(memory_arena == NULL) {
-    mx_arena_free(memory_arena);
+    mx_arena_free(local_arena);
   }
 
   return MGFX_SUCCESS;
 }
 
 void swapchain_destroy(SwapchainVk* swapchain) {
-  for(uint32_t i = 0; i < swapchain->texture_count; i++) {
-    vkDestroyImageView(s_device, swapchain->textures[i].view, NULL);
+  for(uint32_t i = 0; i < swapchain->image_count; i++) {
+    vkDestroyImageView(s_device, swapchain->image_views[i], NULL);
   }
 
   vkDestroySwapchainKHR(s_device, swapchain->handle, NULL);
@@ -222,7 +226,97 @@ void shader_destroy(ShaderVk* shader) {
   vkDestroyShaderModule(s_device, shader->module, NULL);
 }
 
-void create_graphics_pipeline(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program) {
+void texture_create_2d(uint32_t width,
+                    uint32_t height,
+                    VkFormat format,
+                    VkImageUsageFlags usage,
+                    TextureVk* texture) {
+
+  texture->image.format = format;
+  texture->image.extent = (VkExtent3D) {width, height, 1};
+
+  VkImageCreateInfo image_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .format = texture->image.format,
+    .extent = texture->image.extent,
+    .mipLevels = 1,
+    .arrayLayers = 1,
+    .samples = 1,
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .usage = usage,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 1,
+    .pQueueFamilyIndices = &s_queue_indices[MGFX_QUEUE_GRAPHICS],
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  };
+
+  VmaAllocationCreateInfo alloc_info = {
+    .usage = VMA_MEMORY_USAGE_GPU_ONLY,
+    .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+  };
+
+  VK_CHECK(vmaCreateImage(s_allocator,
+                 &image_info,
+                 &alloc_info,
+                 &texture->image.handle,
+                 &texture->allocation,
+                  NULL));
+}
+
+void texture_create_view_2d(const TextureVk* texture, const VkImageAspectFlags aspect, VkImageView* view) {
+  VkImageViewCreateInfo info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .image = texture->image.handle,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .format = texture->image.format,
+    .components = {
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+    },
+    .subresourceRange = {
+      .aspectMask = aspect,
+      .baseMipLevel =0,
+      .levelCount = 1,
+      .baseArrayLayer =0 ,
+      .layerCount = 1,
+    },
+  };
+
+  VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
+}
+
+void texture_destroy(TextureVk *texture) {
+  vmaDestroyImage(s_allocator, texture->image.handle, texture->allocation);
+}
+
+void program_create_compute(const ShaderVk* cs, ProgramVk* program) {
+  VkComputePipelineCreateInfo info = {
+    .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .stage = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .pNext = NULL,
+      .flags = 0,
+      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+      .module = cs->module,
+      .pName = "main",
+      .pSpecializationInfo = NULL,
+    }
+    /*.layout = ,*/
+    /*.basePipelineHandle,*/
+    /*.basePipelineIndex,*/
+  };
+}
+
+void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program) {
   VkGraphicsPipelineCreateInfo info = {};
   info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   info.pNext = NULL;
@@ -406,7 +500,7 @@ int mgfx_init(const MgfxInitInfo* info) {
 
 #ifndef MGFX_MACOS
   app_info.apiVersion = VK_API_VERSION_1_3;
-#else
+#elif define(MX_WIN32)
   app_info.apiVersion = VK_API_VERSION_1_3;
 #endif
 
@@ -599,7 +693,7 @@ int mgfx_init(const MgfxInitInfo* info) {
     .instance = s_instance,
     .physicalDevice = s_phys_device,
     .device = s_device,
-    .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
+    /*.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,*/
   }; VK_CHECK(vmaCreateAllocator(&allocator_info, &s_allocator));
 
   for(int i = 0; i < MGFX_MAX_FRAME_OVERLAP; i++) {
@@ -667,64 +761,21 @@ void mgfx_frame() {
   }; VK_CHECK(vkBeginCommandBuffer(frame->cmd, &cmd_begin_info));
 
   vk_cmd_transition_image(frame->cmd,
-                          s_swapchain.textures[sc_img_idx].image,
+                          &s_swapchain.images[sc_img_idx],
                           VK_IMAGE_ASPECT_COLOR_BIT,
-                          VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_GENERAL);
 
-  VkClearColorValue clear_value = { .float32 = {1.0f, 1.0f, 0.0f, 1.0f} };
-  VkImageSubresourceRange subresource_range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-  vkCmdClearColorImage(frame->cmd,
-                       s_swapchain.textures[sc_img_idx].image, 
-                       VK_IMAGE_LAYOUT_GENERAL,
-                       &clear_value, 1,
-                       &subresource_range);
+  DrawCtx ctx = {
+    .cmd = frame->cmd,
+    .frame_target = &s_swapchain.images[sc_img_idx],
+  }; mgfx_example_updates(&ctx);
 
   vk_cmd_transition_image(frame->cmd,
-                          s_swapchain.textures[sc_img_idx].image,
+                          &s_swapchain.images[sc_img_idx],
                           VK_IMAGE_ASPECT_COLOR_BIT,
-                          VK_IMAGE_LAYOUT_GENERAL,
                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
   VK_CHECK(vkEndCommandBuffer(frame->cmd));
-
-  /*VkCommandBufferSubmitInfo cmd_submit_info = {*/
-  /*  .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,*/
-  /*  .pNext = NULL,*/
-  /*  .commandBuffer = frame->cmd,*/
-  /*  .deviceMask = 0,*/
-  /*};*/
-
-  /*VkSemaphoreSubmitInfo sc_wait_semaphore_submit_info = {*/
-  /*  .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,*/
-  /*  .pNext = NULL,*/
-  /*  .semaphore = frame->swapchain_semaphore,*/
-  /*  .value = 1,*/
-  /*  .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR,*/
-  /*  .deviceIndex = 0,*/
-  /*};*/
-  /**/
-  /*VkSemaphoreSubmitInfo render_signal_semaphore_submit_info = {*/
-  /*  .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,*/
-  /*  .pNext = NULL,*/
-  /*  .semaphore = frame->render_semaphore,*/
-  /*  .value = 1,*/
-  /*  .stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT,*/
-  /*  .deviceIndex = 0,*/
-  /*};*/
-
-  /*VkSubmitInfo2 submit_info = {*/
-  /*  .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,*/
-  /*  .pNext = NULL,*/
-  /*  .flags = 0,*/
-  /*  .waitSemaphoreInfoCount = 1,*/
-  /*  .pWaitSemaphoreInfos = &sc_wait_semaphore_submit_info,*/
-  /*  .commandBufferInfoCount = 1,*/
-  /*  .pCommandBufferInfos = &cmd_submit_info,*/
-  /*  .signalSemaphoreInfoCount = 1,*/
-  /*  .pSignalSemaphoreInfos = &render_signal_semaphore_submit_info,*/
-  /*}; VK_CHECK(vkQueueSubmit2(s_queues[MGFX_QUEUE_GRAPHICS], 1, &submit_info, frame->render_fence));*/
 
   VkPipelineStageFlags wait_stages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkSubmitInfo submit_info = {
