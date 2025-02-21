@@ -21,7 +21,7 @@ VkResult get_window_surface_vk(VkInstance instance, void* nwh, VkSurfaceKHR* sur
   return glfwCreateWindowSurface(instance, window, NULL, surface);
 }
 
-int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count, const char** device_exts, VkPhysicalDevice* phys_device, mx_arena* arena) {
+int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count, const char** device_exts, VkPhysicalDevice* phys_device, MxArena* arena) {
   uint32_t physical_device_count = 0;
   vkEnumeratePhysicalDevices(instance, &physical_device_count, NULL);
 

@@ -23,8 +23,7 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag
 
-    # ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.vert
-    # ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp
 )
 
 find_program(GLSLANG_VALIDATOR glslangValidator)

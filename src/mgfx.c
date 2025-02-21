@@ -2,8 +2,6 @@
 #include "mgfx/defines.h"
 
 #include "renderer_vk.h"
-#include "vma/vk_mem_alloc.h"
-
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
@@ -16,9 +14,13 @@
     #include <vulkan/vulkan_win32.h>
 #endif
 
+#include <vma/vk_mem_alloc.h>
+#include <spirv_reflect/spirv_reflect.h>
+
 #include <mx/mx_memory.h>
 
 #include <string.h>
+#include <assert.h>
 
 enum QueuesVk : uint16_t {
   MGFX_QUEUE_GRAPHICS = 0,
@@ -101,11 +103,11 @@ enum {MGFX_MAX_FRAME_OVERLAP = 2};
 static FrameVk s_frames[MGFX_MAX_FRAME_OVERLAP];
 static uint32_t s_frame_idx = 0;
 
-int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, SwapchainVk* swapchain, mx_arena* memory_arena) {
-  mx_arena* local_arena = memory_arena;
+int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, SwapchainVk* swapchain, MxArena* memory_arena) {
+  MxArena* local_arena = memory_arena;
 
   if(memory_arena == NULL) {
-    mx_arena temp_arena = mx_arena_alloc(MX_KB);
+    MxArena temp_arena = mx_arena_alloc(MX_KB);
     local_arena = &temp_arena;
   } 
 
@@ -152,7 +154,7 @@ int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, Swap
   VK_CHECK(vkCreateSwapchainKHR(s_device, &swapchain_info, NULL, &swapchain->handle));
 
   vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->image_count, NULL);
-  if(swapchain->image_count > K_MAX_SWAPCHAIN_IMAGES) {
+  if(swapchain->image_count > K_SWAPCHAIN_MAX_IMAGES) {
     printf("Requested swapchain images larger than max capacity!");
     return -1;
   }
@@ -206,26 +208,6 @@ void swapchain_destroy(SwapchainVk* swapchain) {
   vkDestroySwapchainKHR(s_device, swapchain->handle, NULL);
 }
 
-void shader_create(size_t length, const char* code, ShaderVk* shader) {
-  if (length % sizeof(uint32_t) != 0) {
-    printf("Shader code size must be a multiple of 4!\n");
-    return;
-  }
-
-  VkShaderModuleCreateInfo info = {};
-  info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  info.pNext = NULL;
-  info.flags = 0;
-  info.codeSize = length;
-  info.pCode = (uint32_t*)(void*)code;
-
-  VK_CHECK(vkCreateShaderModule(s_device, &info, NULL, &shader->module));
-};
-
-void shader_destroy(ShaderVk* shader) {
-  vkDestroyShaderModule(s_device, shader->module, NULL);
-}
-
 void texture_create_2d(uint32_t width,
                     uint32_t height,
                     VkFormat format,
@@ -266,7 +248,7 @@ void texture_create_2d(uint32_t width,
                   NULL));
 }
 
-void texture_create_view_2d(const TextureVk* texture, const VkImageAspectFlags aspect, VkImageView* view) {
+VkImageView texture_get_view(const VkImageAspectFlags aspect, TextureVk* texture) {
   VkImageViewCreateInfo info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = NULL,
@@ -289,14 +271,189 @@ void texture_create_view_2d(const TextureVk* texture, const VkImageAspectFlags a
     },
   };
 
-  VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
+  assert(texture->view_count + 1 < K_TEXTURE_MAX_VIEWS && "Max texture views reached!");
+  VK_CHECK(vkCreateImageView(s_device, &info, NULL, &texture->views[texture->view_count]));
+  return texture->views[texture->view_count++];
 }
 
 void texture_destroy(TextureVk *texture) {
+  for(int i = 0; i < texture->view_count; i++) {
+    vkDestroyImageView(s_device, texture->views[i], NULL);
+  }
+
   vmaDestroyImage(s_allocator, texture->image.handle, texture->allocation);
 }
 
+void program_create_descriptor_sets(const ProgramVk* program,
+                           const VkDescriptorBufferInfo* ds_buffer_infos,
+                           const VkDescriptorImageInfo* ds_image_infos,
+                           VkDescriptorSet* ds_sets) {
+
+  const VkDescriptorPoolSize ds_pool_sizes[] = {
+    {
+      .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = 1
+    },
+
+    {
+      .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      .descriptorCount = 1
+    },
+  };
+  const uint32_t ds_pool_sizes_count = sizeof(ds_pool_sizes) / sizeof(VkDescriptorPoolSize);
+
+  VkDescriptorPoolCreateInfo ds_pool_info = {
+    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .maxSets = 4,
+    .poolSizeCount = ds_pool_sizes_count,
+    .pPoolSizes = ds_pool_sizes,
+  };
+
+  VkDescriptorPool ds_pool;
+  VK_CHECK(vkCreateDescriptorPool(s_device, &ds_pool_info, NULL, &ds_pool));
+
+  VkWriteDescriptorSet ds_writes[K_SHADER_MAX_DESCRIPTOR_SET] = {};
+  uint32_t ds_write_count = 0;
+
+  for(int stage_index = 0; stage_index < MGFX_SHADER_STAGE_COUNT; stage_index++) {
+    const ShaderVk* shader = program->shaders[stage_index];
+
+    if(!shader) {
+      continue;
+    }
+
+    for(int ds_index = 0;  ds_index < shader->descriptor_set_count; ds_index++) {
+      if(ds_sets[ds_index] != VK_NULL_HANDLE) {
+        continue;
+      }
+      ++ds_write_count;
+
+      const DescriptorSetInfoVk* ds = &shader->descriptor_sets[ds_index];
+
+      VkDescriptorSetAllocateInfo alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = NULL,
+        .descriptorPool = ds_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &program->ds_layouts[ds_index]
+      }; VK_CHECK(vkAllocateDescriptorSets(s_device, &alloc_info, &ds_sets[ds_index]));
+
+      for(int binding_index = 0;  binding_index < ds->binding_count; binding_index++) {
+        ds_writes[ds_index] = (VkWriteDescriptorSet) {
+          .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .pNext = NULL,
+          .dstSet = ds_sets[ds_index],
+          .dstBinding = ds->bindings[binding_index].binding,
+          .dstArrayElement = 0,
+          .descriptorCount = 1,
+          .descriptorType = ds->bindings[binding_index].descriptorType,
+          .pImageInfo = ds_image_infos,
+          .pBufferInfo = ds_buffer_infos,
+          .pTexelBufferView = NULL,
+        };
+      }
+    };
+  }
+
+  vkUpdateDescriptorSets(s_device, ds_write_count, ds_writes, 0, NULL);
+}
+
+void shader_create(size_t length, const char* code, ShaderVk* shader) {
+  MxArena shader_arena = mx_arena_alloc(MX_KB);
+
+  if (length % sizeof(uint32_t) != 0) {
+    printf("Shader code size must be a multiple of 4!\n");
+    return;
+  }
+
+  SpvReflectShaderModule module;
+  SpvReflectResult result = spvReflectCreateShaderModule(length, code, &module);
+  assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+  shader->descriptor_set_count = module.descriptor_set_count;
+
+  uint32_t binding_count;
+  result = spvReflectEnumerateDescriptorBindings(&module, &binding_count, NULL);
+  if(binding_count > 0) {
+    assert(result == SPV_REFLECT_RESULT_SUCCESS);
+    printf("BINDING COUNT %d\n", binding_count);
+    printf("BYTES REQUIRED: %lu\n", binding_count * sizeof(SpvReflectDescriptorBinding));
+    SpvReflectDescriptorBinding* bindings = mx_arena_push(&shader_arena, binding_count * sizeof(SpvReflectDescriptorBinding));
+    spvReflectEnumerateDescriptorBindings(&module, &binding_count, &bindings);
+
+    for(uint32_t i = 0; i < binding_count; i++) {
+      DescriptorSetInfoVk* ds = &shader->descriptor_sets[bindings[i].set];
+
+      ds->bindings[bindings[i].binding] = (VkDescriptorSetLayoutBinding){
+        .binding = bindings[i].binding,
+        .descriptorType = (VkDescriptorType)bindings[i].descriptor_type,
+        .descriptorCount = 1,
+        .stageFlags = module.shader_stage,
+        .pImmutableSamplers = NULL,
+      };
+
+      ds->binding_count++;
+    }
+  }
+
+  spvReflectDestroyShaderModule(&module);
+
+  VkShaderModuleCreateInfo info = {};
+  info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  info.pNext = NULL;
+  info.flags = 0;
+  info.codeSize = length;
+  info.pCode = (uint32_t*)(void*)code;
+
+  VK_CHECK(vkCreateShaderModule(s_device, &info, NULL, &shader->module));
+
+  mx_arena_free(&shader_arena);
+};
+
+void shader_destroy(ShaderVk* shader) {
+  vkDestroyShaderModule(s_device, shader->module, NULL);
+}
+
 void program_create_compute(const ShaderVk* cs, ProgramVk* program) {
+  program->shaders[MGFX_SHADER_STAGE_COMPUTE] = cs;
+
+  VkDescriptorSetLayout flat_ds_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
+  int flat_ds_layout_count = 0;
+
+  for(int ds_index = 0; ds_index < cs->descriptor_set_count; ds_index++) {
+    const DescriptorSetInfoVk* ds = &cs->descriptor_sets[ds_index];
+
+    if(ds->binding_count <= 0) {
+      continue;
+    };
+
+    VkDescriptorSetLayoutCreateInfo ds_layout_info = {
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+      .pNext = NULL,
+      .flags = 0,
+      .bindingCount = ds->binding_count,
+      .pBindings = ds->bindings,
+    }; VK_CHECK(vkCreateDescriptorSetLayout(s_device,
+                                            &ds_layout_info,
+                                            NULL,
+                                            &program->ds_layouts[ds_index]));
+
+    flat_ds_layouts[flat_ds_layout_count] = program->ds_layouts[flat_ds_layout_count];
+    ++flat_ds_layout_count;
+  }
+
+  VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .setLayoutCount = flat_ds_layout_count,
+    .pSetLayouts = flat_ds_layouts,
+    .pushConstantRangeCount = 0,
+    .pPushConstantRanges = NULL,
+  }; VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_create_info, NULL, &program->layout));
+
   VkComputePipelineCreateInfo info = {
     .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
     .pNext = NULL,
@@ -309,11 +466,13 @@ void program_create_compute(const ShaderVk* cs, ProgramVk* program) {
       .module = cs->module,
       .pName = "main",
       .pSpecializationInfo = NULL,
-    }
-    /*.layout = ,*/
-    /*.basePipelineHandle,*/
-    /*.basePipelineIndex,*/
+    },
+    .layout = program->layout,
+    .basePipelineHandle = VK_NULL_HANDLE,
+    .basePipelineIndex = 0,
   };
+
+  VK_CHECK(vkCreateComputePipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
 }
 
 void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program) {
@@ -487,19 +646,27 @@ void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* 
   VK_CHECK(vkCreateGraphicsPipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
 }
 
+void program_destroy(ProgramVk* program) {
+  for(int i = 0; i < K_SHADER_MAX_DESCRIPTOR_SET; i++) {
+    vkDestroyDescriptorSetLayout(s_device, program->ds_layouts[i], NULL);
+    vkDestroyPipelineLayout(s_device, program->layout, NULL);
+    vkDestroyPipeline(s_device, program->pipeline, NULL);
+  }
+}
+
 int mgfx_init(const MgfxInitInfo* info) {
-  mx_arena vk_init_arena = mx_arena_alloc(MX_MB);
+  MxArena vk_init_arena = mx_arena_alloc(MX_MB);
 
   VkApplicationInfo app_info = {};
   app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
   app_info.pNext = NULL;
-  app_info.pApplicationName = info->name; 
+  app_info.pApplicationName = info->name;
   app_info.applicationVersion = VK_MAKE_VERSION(0,0,1);
   app_info.pEngineName = "MGFX";
   app_info.engineVersion = VK_MAKE_VERSION(0,0,1);
 
 #ifndef MGFX_MACOS
-  app_info.apiVersion = VK_API_VERSION_1_3;
+  app_info.apiVersion = VK_API_VERSION_1_2;
 #elif define(MX_WIN32)
   app_info.apiVersion = VK_API_VERSION_1_3;
 #endif
@@ -518,20 +685,20 @@ int mgfx_init(const MgfxInitInfo* info) {
   VkExtensionProperties* avail_props = mx_arena_push(&vk_init_arena, avail_prop_count * sizeof(VkExtensionProperties));
   VK_CHECK(vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, avail_props));
 
-  int validated_ext_count = 0;
   for(uint32_t req_index = 0; req_index < k_req_ext_count; req_index++) {
+    int validated = -1;
     for(uint32_t avail_index = 0; avail_index < avail_prop_count; avail_index++) {
       if(strcmp(k_req_exts[req_index], avail_props[avail_index].extensionName) == 0) {
-        validated_ext_count++;
+        validated = MX_SUCESS;
         continue;
       }
     }
-  }
 
-  if(validated_ext_count != k_req_ext_count) {
-    printf("[Error]: Extensions required not supported!\n");
-    mx_arena_free(&vk_init_arena);
-    return -1;
+    if(validated != MX_SUCESS) {
+      printf("[Error]: Extension required not supported: %s!\n", k_req_exts[req_index]);
+      mx_arena_free(&vk_init_arena);
+      return -1;
+    }
   }
 
   instance_info.enabledExtensionCount = k_req_ext_count;
@@ -803,7 +970,7 @@ void mgfx_frame() {
 
   s_frame_idx = (s_frame_idx + 1) % MGFX_MAX_FRAME_OVERLAP;
 };
- 
+
 void mgfx_shutdown() {
   VK_CHECK(vkDeviceWaitIdle(s_device));
 

@@ -9,7 +9,7 @@
 GLFWwindow* s_window = NULL;
 
 int load_shader_from_path(const char* file_path, ShaderVk* shader) {
-	mx_arena arena = mx_arena_alloc(MX_KB);
+	MxArena arena = mx_arena_alloc(MX_MB);
 
 	size_t size;
 	mx_read_file(file_path, &size, NULL);
