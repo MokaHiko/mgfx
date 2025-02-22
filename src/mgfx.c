@@ -51,6 +51,11 @@ const char* k_req_device_ext_names[] = {
   VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
 #endif
 };
+
+// Exntesion function pointers
+PFN_vkCmdBeginRenderingKHR vk_cmd_begin_rendering_khr;
+PFN_vkCmdEndRenderingKHR vk_cmd_end_rendering_khr;
+
 const uint32_t k_req_device_ext_count = (uint32_t)(sizeof(k_req_device_ext_names) / sizeof(const char*));
 
 const VkFormat k_surface_fmt = VK_FORMAT_B8G8R8A8_SRGB;
@@ -271,7 +276,7 @@ VkImageView texture_get_view(const VkImageAspectFlags aspect, TextureVk* texture
     },
   };
 
-  assert(texture->view_count + 1 < K_TEXTURE_MAX_VIEWS && "Max texture views reached!");
+  assert(texture->view_count < K_TEXTURE_MAX_VIEWS && "Max texture views reached!");
   VK_CHECK(vkCreateImageView(s_device, &info, NULL, &texture->views[texture->view_count]));
   return texture->views[texture->view_count++];
 }
@@ -374,12 +379,10 @@ void shader_create(size_t length, const char* code, ShaderVk* shader) {
 
   shader->descriptor_set_count = module.descriptor_set_count;
 
-  uint32_t binding_count;
+  uint32_t binding_count = 0;
   result = spvReflectEnumerateDescriptorBindings(&module, &binding_count, NULL);
   if(binding_count > 0) {
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
-    printf("BINDING COUNT %d\n", binding_count);
-    printf("BYTES REQUIRED: %lu\n", binding_count * sizeof(SpvReflectDescriptorBinding));
     SpvReflectDescriptorBinding* bindings = mx_arena_push(&shader_arena, binding_count * sizeof(SpvReflectDescriptorBinding));
     spvReflectEnumerateDescriptorBindings(&module, &binding_count, &bindings);
 
@@ -395,6 +398,27 @@ void shader_create(size_t length, const char* code, ShaderVk* shader) {
       };
 
       ds->binding_count++;
+    }
+  }
+
+  uint32_t pc_count = 0;
+  result = spvReflectEnumeratePushConstantBlocks(&module, &pc_count, NULL);
+  assert(result == SPV_REFLECT_RESULT_SUCCESS);
+  if(pc_count > 0) {
+    SpvReflectBlockVariable** push_constants = mx_arena_push(&shader_arena,
+                                                                  pc_count * sizeof(SpvReflectBlockVariable));
+    spvReflectEnumeratePushConstantBlocks(&module, &pc_count, push_constants);
+    for(uint32_t block_idx = 0; block_idx < pc_count; block_idx++) {
+      const SpvReflectBlockVariable* pc_block = push_constants[block_idx];
+      for(int member_idx = 0; member_idx < push_constants[block_idx]->member_count; member_idx++) {
+        shader->pc_ranges[block_idx] = (VkPushConstantRange) {
+          .stageFlags = module.shader_stage,
+          .offset = push_constants[block_idx]->offset,
+          .size = push_constants[block_idx]->size,
+        };
+
+        ++shader->pc_count;
+      }
     }
   }
 
@@ -450,8 +474,8 @@ void program_create_compute(const ShaderVk* cs, ProgramVk* program) {
     .flags = 0,
     .setLayoutCount = flat_ds_layout_count,
     .pSetLayouts = flat_ds_layouts,
-    .pushConstantRangeCount = 0,
-    .pPushConstantRanges = NULL,
+    .pushConstantRangeCount = cs->pc_count,
+    .pPushConstantRanges = cs->pc_ranges,
   }; VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_create_info, NULL, &program->layout));
 
   VkComputePipelineCreateInfo info = {
@@ -476,6 +500,59 @@ void program_create_compute(const ShaderVk* cs, ProgramVk* program) {
 }
 
 void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program) {
+  program->shaders[MGFX_SHADER_STAGE_VERTEX] = vs;
+  program->shaders[MGFX_SHADER_STAGE_FRAGMENT] = fs;
+
+  VkDescriptorSetLayout flat_ds_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
+  int flat_ds_layout_count = 0;
+
+  VkPushConstantRange flat_pc_ranges[K_SHADER_MAX_PUSH_CONSTANTS];
+  int flat_pc_range_count = 0;
+
+  const MGFX_SHADER_STAGE gfx_stages[] = { MGFX_SHADER_STAGE_VERTEX, MGFX_SHADER_STAGE_FRAGMENT };
+  const int gfx_stages_count = sizeof(gfx_stages) / sizeof(MGFX_SHADER_STAGE);
+
+  for(int i = 0; i < gfx_stages_count; i++) {
+    const ShaderVk* shader = program->shaders[gfx_stages[i]];
+
+    for(int ds_index = 0; ds_index < shader->descriptor_set_count; ds_index++) {
+      const DescriptorSetInfoVk* ds = &shader->descriptor_sets[ds_index];
+
+      if(ds->binding_count <= 0) {
+        continue;
+      };
+
+      VkDescriptorSetLayoutCreateInfo ds_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .bindingCount = ds->binding_count,
+        .pBindings = ds->bindings,
+      }; VK_CHECK(vkCreateDescriptorSetLayout(s_device,
+                                              &ds_layout_info,
+                                              NULL,
+                                              &program->ds_layouts[ds_index]));
+
+      flat_ds_layouts[flat_ds_layout_count] = program->ds_layouts[flat_ds_layout_count];
+      ++flat_ds_layout_count;
+    }
+
+    for(int pc_index = 0; pc_index < shader->pc_count; pc_index++) {
+      flat_pc_ranges[flat_pc_range_count] = shader->pc_ranges[flat_pc_range_count];
+      ++flat_pc_range_count;
+    }
+  }
+
+  VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0,
+    .setLayoutCount = flat_ds_layout_count,
+    .pSetLayouts = flat_ds_layouts,
+    .pushConstantRangeCount = flat_pc_range_count,
+    .pPushConstantRanges = flat_pc_ranges,
+  }; VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_create_info, NULL, &program->layout));
+
   VkGraphicsPipelineCreateInfo info = {};
   info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
   info.pNext = NULL;
@@ -543,7 +620,7 @@ void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* 
     .pNext = NULL,
     .flags = 0,
     .depthClampEnable = VK_FALSE,
-    .rasterizerDiscardEnable = VK_TRUE,
+    .rasterizerDiscardEnable = VK_FALSE,
     .polygonMode = VK_POLYGON_MODE_FILL,
     .cullMode = VK_CULL_MODE_NONE,
     .frontFace = VK_FRONT_FACE_CLOCKWISE,
@@ -559,7 +636,7 @@ void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* 
     .pNext = NULL,
     .flags = 0,
     .rasterizationSamples = 1,
-    .sampleShadingEnable = VK_TRUE,
+    .sampleShadingEnable = VK_FALSE,
     .minSampleShading = 1.0,
     .pSampleMask = NULL,
     .alphaToCoverageEnable = VK_FALSE,
@@ -599,7 +676,7 @@ void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* 
     .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     .pNext = NULL,
     .flags = 0,
-    .logicOpEnable = VK_TRUE,
+    .logicOpEnable = VK_FALSE,
     .logicOp = VK_LOGIC_OP_COPY,
     .attachmentCount = 1,
     .pAttachments = &color_attachment,
@@ -631,27 +708,35 @@ void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* 
   VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_info, NULL, &program->layout));
   info.layout = program->layout;
 
+  // TODO: Get from color attachment
+  VkFormat color_attachment_format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
   // Dynamic Rendering.
   info.renderPass = NULL;
-  VkPipelineRenderingCreateInfoKHR rendering_create_pipeline = {
+  VkPipelineRenderingCreateInfoKHR rendering_create_info = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
     .pNext = NULL,
-    .viewMask = 1,
+    .viewMask = 0,
     .colorAttachmentCount = 1,
-    .pColorAttachmentFormats = &k_surface_fmt,
-    /*.depthAttachmentFormat,*/
-    /*.stencilAttachmentFormat,*/
-  }; info.pNext = &rendering_create_pipeline;
+    .pColorAttachmentFormats = &color_attachment_format,
+    .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+    .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
+  }; info.pNext = &rendering_create_info;
 
   VK_CHECK(vkCreateGraphicsPipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
 }
 
 void program_destroy(ProgramVk* program) {
   for(int i = 0; i < K_SHADER_MAX_DESCRIPTOR_SET; i++) {
+    if(program->ds_layouts[i] == VK_NULL_HANDLE) {
+      continue;
+    }
+
     vkDestroyDescriptorSetLayout(s_device, program->ds_layouts[i], NULL);
-    vkDestroyPipelineLayout(s_device, program->layout, NULL);
-    vkDestroyPipeline(s_device, program->pipeline, NULL);
   }
+
+  vkDestroyPipelineLayout(s_device, program->layout, NULL);
+  vkDestroyPipeline(s_device, program->pipeline, NULL);
 }
 
 int mgfx_init(const MgfxInitInfo* info) {
@@ -665,10 +750,10 @@ int mgfx_init(const MgfxInitInfo* info) {
   app_info.pEngineName = "MGFX";
   app_info.engineVersion = VK_MAKE_VERSION(0,0,1);
 
-#ifndef MGFX_MACOS
+#ifdef MX_MACOS
   app_info.apiVersion = VK_API_VERSION_1_2;
 #elif define(MX_WIN32)
-  app_info.apiVersion = VK_API_VERSION_1_3;
+  app_info.apiVersion = VK_API_VERSION_1_2;
 #endif
 
   VkInstanceCreateInfo instance_info = {};
@@ -726,6 +811,10 @@ int mgfx_init(const MgfxInitInfo* info) {
 #endif
 
   VK_CHECK(vkCreateInstance(&instance_info, NULL, &s_instance));
+
+  // Extension functions.
+  vk_cmd_begin_rendering_khr = (PFN_vkCmdBeginRenderingKHR)vkGetInstanceProcAddr(s_instance, "vkCmdBeginRenderingKHR");
+  vk_cmd_end_rendering_khr = (PFN_vkCmdEndRenderingKHR)vkGetInstanceProcAddr(s_instance, "vkCmdEndRenderingKHR");
 
 #ifdef MX_DEBUG
   VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info = {};
@@ -802,9 +891,15 @@ int mgfx_init(const MgfxInitInfo* info) {
   }
 
   VkPhysicalDeviceFeatures phys_device_features = {};
+
+  VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features = {
+    .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
+    .dynamicRendering = VK_TRUE,
+  };
+
   VkDeviceCreateInfo device_info = {
     .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-    .pNext = NULL,
+    .pNext = &dynamic_rendering_features,
     .flags = 0,
     .queueCreateInfoCount = unique_queue_count,
     .pQueueCreateInfos = queue_infos,
@@ -816,6 +911,10 @@ int mgfx_init(const MgfxInitInfo* info) {
   for(uint16_t i = 0; i < unique_queue_count; i++) {
     vkGetDeviceQueue(s_device, s_queue_indices[i], 0, &s_queues[i]);
   }
+
+#ifdef MX_MACOS
+  PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR;
+#endif
 
   VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(s_phys_device, s_surface, &s_surface_caps));
 

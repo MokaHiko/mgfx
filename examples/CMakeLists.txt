@@ -20,10 +20,10 @@ add_executable(clear_screen clear_screen/main.c)
 target_link_libraries(clear_screen PRIVATE ex_common)
 
 set(SHADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag.glsl
 
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp.glsl
 )
 
 find_program(GLSLANG_VALIDATOR glslangValidator)

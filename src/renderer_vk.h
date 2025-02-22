@@ -92,6 +92,7 @@ void texture_destroy(TextureVk *texture);
 
 enum {K_SHADER_MAX_DESCRIPTOR_SET = 4};
 enum {K_SHADER_MAX_DESCRIPTOR_BINDING = 8};
+enum {K_SHADER_MAX_PUSH_CONSTANTS = 4};
 typedef struct DescriptorSetInfoVk {
   VkDescriptorSetLayoutBinding bindings[K_SHADER_MAX_DESCRIPTOR_BINDING];
   uint32_t binding_count;
@@ -100,6 +101,9 @@ typedef struct DescriptorSetInfoVk {
 typedef struct ShaderVk {
   DescriptorSetInfoVk descriptor_sets[K_SHADER_MAX_DESCRIPTOR_SET];
   int descriptor_set_count;
+
+  VkPushConstantRange pc_ranges[K_SHADER_MAX_PUSH_CONSTANTS];
+  int pc_count;
 
   VkShaderModule module;
 } ShaderVk;
@@ -116,13 +120,18 @@ typedef struct ProgramVk {
 } ProgramVk;
 
 void program_create_compute(const ShaderVk* cs, ProgramVk* program);
+void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program);
 
 void program_create_descriptor_sets(const ProgramVk* program,
                                     const VkDescriptorBufferInfo* ds_buffer_infos,
                                     const VkDescriptorImageInfo* ds_image_infos,
                                     VkDescriptorSet* ds_sets);
+void program_destroy(ProgramVk* program);
 
 // Commands.
+extern PFN_vkCmdBeginRenderingKHR vk_cmd_begin_rendering_khr;
+extern PFN_vkCmdEndRenderingKHR vk_cmd_end_rendering_khr;
+
 void vk_cmd_transition_image(VkCommandBuffer cmd,
                              ImageVk* image,
                              VkImageAspectFlags aspect_flags,
@@ -138,7 +147,6 @@ void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
                                 VkImageAspectFlags aspect,
                                 ImageVk* dst);
 
-// TODO: Remove
 //TODO: Change to encoder
 typedef struct DrawCtx {
   VkCommandBuffer cmd;
