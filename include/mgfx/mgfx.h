@@ -8,10 +8,10 @@ typedef MX_API struct {
 	void* nwh;
 	int width;
 	int height;
-} MgfxInitInfo;
+} mgfx_init_info;
 
 // @Returns MGFX_SUCCESS(0) if successful.
-MX_API int mgfx_init(const MgfxInitInfo* info);
+MX_API int mgfx_init(const mgfx_init_info* info);
 
 MX_API void mgfx_frame();
 
@@ -25,6 +25,6 @@ static const uint16_t mgfx_invalid_handle = UINT16_MAX;
     uint16_t idx;				\
   } name;                                       \
 
-MGFX_HANDLE(MgfxVertexBuffer)
+MGFX_HANDLE(mgfx_vbh)
 
 #endif

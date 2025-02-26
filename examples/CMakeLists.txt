@@ -8,22 +8,34 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
 )
-
 FetchContent_MakeAvailable(glfw)
+
+FetchContent_Declare(
+    cglm
+    GIT_REPOSITORY https://github.com/recp/cglm.git
+    GIT_TAG        v0.9.6
+)
+FetchContent_MakeAvailable(cglm)
 
 add_library(ex_common ex_common.c)
 target_link_libraries(ex_common PUBLIC mgfx)
 target_link_libraries(ex_common PRIVATE glfw)
 target_include_directories(ex_common PUBLIC ./)
 
-add_executable(clear_screen clear_screen/main.c)
+add_executable(clear_screen clear_screen/clear_screen.c)
 target_link_libraries(clear_screen PRIVATE ex_common)
+
+add_executable(cubes cubes/cubes.c)
+target_link_libraries(cubes PRIVATE ex_common cglm)
 
 set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.frag.glsl
 )
 
 find_program(GLSLANG_VALIDATOR glslangValidator)

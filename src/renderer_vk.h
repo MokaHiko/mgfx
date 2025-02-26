@@ -26,6 +26,8 @@
 #define VK_CHECK(call) (call)
 #endif
 
+uint32_t vk_format_size(VkFormat format);
+
 VkResult get_window_surface_vk(VkInstance instance, void* window, VkSurfaceKHR* surface);
 
 int choose_physical_device_vk(VkInstance instance,
@@ -37,7 +39,7 @@ int choose_physical_device_vk(VkInstance instance,
 void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, 
                                 void* nwh, 
                                 VkExtent2D* extent);
-typedef struct FrameVk {
+typedef struct frame_vk {
   VkCommandPool cmd_pool;
   VkCommandBuffer cmd;
 
@@ -45,19 +47,19 @@ typedef struct FrameVk {
   VkFence render_fence;
 
   VkSemaphore swapchain_semaphore;
-} FrameVk;
+} frame_vk;
 
-typedef struct ImageVk {
+typedef struct image_vk {
   VkImage handle;
   VkFormat format;
 
   VkImageLayout layout;
   VkExtent3D extent;
-} ImageVk;
+} image_vk;
 
 enum {K_SWAPCHAIN_MAX_IMAGES = 4};
 typedef struct SwapchainVk {
-  ImageVk images[K_SWAPCHAIN_MAX_IMAGES];
+  image_vk images[K_SWAPCHAIN_MAX_IMAGES];
   VkImageView image_views[K_SWAPCHAIN_MAX_IMAGES];
   uint32_t image_count;
 
@@ -72,85 +74,114 @@ int swapchain_create(VkSurfaceKHR surface,
                      MxArena* memory_arena);
 void swapchain_destroy(SwapchainVk* swapchain);
 
+typedef struct BufferVk {
+  VkBufferUsageFlags usage;
+
+  VmaAllocation allocation;
+  VkBuffer handle;
+} BufferVk;
+
+typedef BufferVk VertexBufferVk;
+typedef BufferVk IndexBufferVk;
+
+void vertex_buffer_create(size_t size, const void* data, VertexBufferVk* MX_NOT_NULL buffer);
+void index_buffer_create(size_t size, const void* data, IndexBufferVk* MX_NOT_NULL buffer);
+
 enum {K_TEXTURE_MAX_VIEWS = 4};
-typedef struct TextureVk {
+typedef struct texture_vk {
   VkImageView views[K_TEXTURE_MAX_VIEWS];
   int view_count;
 
   VmaAllocation allocation;
-  ImageVk image;
-} TextureVk;
+  image_vk image;
+} texture_vk;
 
-VkImageView texture_get_view(const VkImageAspectFlags aspect, TextureVk* texture);
+VkImageView texture_get_view(const VkImageAspectFlags aspect, texture_vk* texture);
 
 void texture_create_2d(uint32_t width,
                     uint32_t height,
                     VkFormat format,
                     VkImageUsageFlags usage,
-                    TextureVk* texture);
-void texture_destroy(TextureVk *texture);
+                    texture_vk* texture);
+void texture_destroy(texture_vk *texture);
 
-enum {K_SHADER_MAX_DESCRIPTOR_SET = 4};
+enum { K_SHADER_MAX_DESCRIPTOR_SET = 4};
 enum {K_SHADER_MAX_DESCRIPTOR_BINDING = 8};
 enum {K_SHADER_MAX_PUSH_CONSTANTS = 4};
-typedef struct DescriptorSetInfoVk {
+enum {K_SHADER_MAX_VERTEX_BINDINGS = 4};
+enum {K_SHADER_MAX_VERTEX_ATTRIBUTES = 16};
+typedef struct descriptor_set_info_vk {
   VkDescriptorSetLayoutBinding bindings[K_SHADER_MAX_DESCRIPTOR_BINDING];
   uint32_t binding_count;
-} DescriptorSetInfoVk;
+} descriptor_set_info_vk;
 
-typedef struct ShaderVk {
-  DescriptorSetInfoVk descriptor_sets[K_SHADER_MAX_DESCRIPTOR_SET];
+typedef struct shader_vk {
+  descriptor_set_info_vk descriptor_sets[K_SHADER_MAX_DESCRIPTOR_SET];
   int descriptor_set_count;
 
   VkPushConstantRange pc_ranges[K_SHADER_MAX_PUSH_CONSTANTS];
   int pc_count;
 
+  // Vertex shader.
+  VkVertexInputBindingDescription vertex_bindings[K_SHADER_MAX_VERTEX_BINDINGS];
+  int vertex_binding_count;
+
+  VkVertexInputAttributeDescription vertex_attributes[K_SHADER_MAX_VERTEX_ATTRIBUTES];
+  int vertex_attribute_count;
+
   VkShaderModule module;
-} ShaderVk;
+} shader_vk;
 
-void shader_create(size_t length, const char* code, ShaderVk* shader);
-void shader_destroy(ShaderVk* shader);
+void shader_create(size_t length, const char* code, shader_vk* shader);
+void shader_destroy(shader_vk* shader);
 
-typedef struct ProgramVk {
+typedef struct program_vk {
+  const shader_vk* shaders[MGFX_SHADER_STAGE_COUNT];
   VkDescriptorSetLayout ds_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
-  const ShaderVk* shaders[MGFX_SHADER_STAGE_COUNT];
 
   VkPipelineLayout layout;
   VkPipeline pipeline;
-} ProgramVk;
+} program_vk;
 
-void program_create_compute(const ShaderVk* cs, ProgramVk* program);
-void program_create_graphics(const ShaderVk* vs, const ShaderVk* fs, ProgramVk* program);
+void program_create_compute(const shader_vk* cs, program_vk* program);
+void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_vk* program);
 
-void program_create_descriptor_sets(const ProgramVk* program,
+void program_create_descriptor_sets(const program_vk* program,
                                     const VkDescriptorBufferInfo* ds_buffer_infos,
                                     const VkDescriptorImageInfo* ds_image_infos,
                                     VkDescriptorSet* ds_sets);
-void program_destroy(ProgramVk* program);
+void program_destroy(program_vk* program);
 
-// Commands.
+// TODO: Remove.
 extern PFN_vkCmdBeginRenderingKHR vk_cmd_begin_rendering_khr;
 extern PFN_vkCmdEndRenderingKHR vk_cmd_end_rendering_khr;
 
+// Commands.
+typedef struct buffer_copy_cmd_vk {
+  VkBufferCopy copy;
+  const BufferVk* src;
+  const BufferVk* dst;
+} buffer_copy_cmd_vk;
+
 void vk_cmd_transition_image(VkCommandBuffer cmd,
-                             ImageVk* image,
+                             image_vk* image,
                              VkImageAspectFlags aspect_flags,
                              VkImageLayout new);
 
 void vk_cmd_clear_image(VkCommandBuffer cmd,
-                        ImageVk* target,
+                        image_vk* target,
                         const VkImageSubresourceRange *range,
                         const VkClearColorValue *clear);
 
 void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
-                                const ImageVk* src,
+                                const image_vk* src,
                                 VkImageAspectFlags aspect,
-                                ImageVk* dst);
+                                image_vk* dst);
 
 //TODO: Change to encoder
 typedef struct DrawCtx {
   VkCommandBuffer cmd;
-  ImageVk* frame_target;
+  image_vk* frame_target;
 } DrawCtx;
 extern void mgfx_example_updates(const DrawCtx* frame);
 

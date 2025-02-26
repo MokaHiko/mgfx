@@ -1,14 +1,14 @@
 #include "ex_common.h"
 
-ShaderVk vertex_shader;
-ShaderVk fragment_shader;
-ProgramVk gfx_program;
+shader_vk vertex_shader;
+shader_vk fragment_shader;
+program_vk gfx_program;
 
-ShaderVk compute_shader;
+shader_vk compute_shader;
 VkDescriptorSet compute_ds_set;
-ProgramVk compute_program;
+program_vk compute_program;
 
-TextureVk color_attachment;
+texture_vk color_attachment;
 VkImageView color_attachment_view;
 
 int width = 720;
