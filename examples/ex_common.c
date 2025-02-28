@@ -28,23 +28,26 @@ int load_shader_from_path(const char* file_path, shader_vk* shader) {
 	return MX_SUCCESS;
 }
 
+static void on_window_resize(GLFWwindow* window, int width, int height) {
+	mgfx_reset(width, height);
+}
+
 int mgfx_example_app() {
 	if(glfwInit() != GLFW_TRUE) {
 		return -1;
 	}
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	s_window = glfwCreateWindow(720, 480, "Examples", NULL, NULL);
 
-	mgfx_init_info mgfx_info = {
-		"Clear Screen",
-		s_window,
-	};
+	mgfx_init_info mgfx_info = { "Clear Screen", s_window};
 
 	if(mgfx_init(&mgfx_info) != 0) {
 		return -1;
 	}
+
+	glfwSetFramebufferSizeCallback(s_window, on_window_resize);
 
 	mgfx_example_init();
 

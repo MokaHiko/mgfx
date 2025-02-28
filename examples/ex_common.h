@@ -3,6 +3,9 @@
 
 #include <mgfx/mgfx.h>
 
+#define APP_WIDTH 1080
+#define APP_HEIGHT 720
+
 // TODO: REMOVE WHEN API AGNOSTIC.
 #include "../../mgfx/src/renderer_vk.h"
 int load_shader_from_path(const char* file_path, shader_vk* shader);

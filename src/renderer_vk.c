@@ -1,6 +1,7 @@
 #include "renderer_vk.h"
 
 #include "mgfx/defines.h"
+#include <vulkan/vulkan_core.h>
 
 #ifdef MX_MACOS
 #include <GLFW/glfw3.h>
@@ -612,4 +613,75 @@ void vk_cmd_clear_image(VkCommandBuffer cmd,
                        clear,
                        1,
                        range);
+}
+
+void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
+  int width = 0;
+  int height = 0;
+
+  if(fb->color_attachment_count > 0)  {
+    width = fb->color_attachments[0]->image.extent.width;
+    height = fb->color_attachments[0]->image.extent.height;
+  } else if(fb->depth_attachment) {
+    width = fb->depth_attachment->image.extent.width;
+    height = fb->depth_attachment->image.extent.height;
+  } else {
+  }
+
+  for(uint32_t i = 0; i < fb->color_attachment_count; i++) {
+    vk_cmd_transition_image(cmd,
+                    &fb->color_attachments[i]->image,
+                     VK_IMAGE_ASPECT_COLOR_BIT,
+                     VK_IMAGE_LAYOUT_GENERAL);
+  }
+
+  if(fb->depth_attachment) {
+    vk_cmd_transition_image(cmd, &fb->depth_attachment->image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+  }
+
+  VkRenderingAttachmentInfo color_attachment_infos[fb->color_attachment_count] = {};
+
+  for(uint32_t i = 0; i < fb->color_attachment_count; i++) {
+    color_attachment_infos[i] = (VkRenderingAttachmentInfo){
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .pNext = NULL,
+            .imageView = fb->color_attachment_views[i],
+            .imageLayout = fb->color_attachments[i]->image.layout,
+            .resolveMode = VK_RESOLVE_MODE_NONE,
+            .resolveImageView = VK_NULL_HANDLE,
+            .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
+  }
+
+  VkRenderingAttachmentInfo depth_attachment_info = {
+          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+          .pNext = NULL,
+          .imageView = fb->depth_attachment_view,
+          .imageLayout = fb->depth_attachment ? fb->depth_attachment->image.layout : VK_IMAGE_LAYOUT_UNDEFINED,
+          .resolveMode = VK_RESOLVE_MODE_NONE,
+          .resolveImageView = VK_NULL_HANDLE,
+          .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+          .clearValue = { .depthStencil = { 1.0f, 0 } }
+  };
+
+  VkRenderingInfo rendering_info = {
+          .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+          .pNext = NULL,
+          .flags = 0,
+          .renderArea = {.offset = {0, 0}, .extent = {width, height}},
+          .layerCount = 1,
+          .viewMask = 0,
+          .colorAttachmentCount = fb->color_attachment_count,
+          .pColorAttachments = color_attachment_infos,
+          .pDepthAttachment = &depth_attachment_info,
+          .pStencilAttachment = NULL,
+  }; vk_cmd_begin_rendering_khr(cmd, &rendering_info);
+}
+
+void vk_cmd_end_rendering(VkCommandBuffer cmd) {
+	vk_cmd_end_rendering_khr(cmd);
 }

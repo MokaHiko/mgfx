@@ -28,6 +28,9 @@ target_link_libraries(clear_screen PRIVATE ex_common)
 add_executable(cubes cubes/cubes.c)
 target_link_libraries(cubes PRIVATE ex_common cglm)
 
+add_executable(gltf_loading gltf_loading/gltf_loading.c)
+target_link_libraries(gltf_loading PRIVATE ex_common cglm)
+
 set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag.glsl

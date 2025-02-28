@@ -39,6 +39,13 @@ int choose_physical_device_vk(VkInstance instance,
 void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, 
                                 void* nwh, 
                                 VkExtent2D* extent);
+
+enum {
+  MGFX_FRAME_0,
+  MGFX_FRAME_1,
+  MGFX_FRAME_COUNT = 2 /* MGFX_FRAME_OVERLAP */ 
+};
+
 typedef struct frame_vk {
   VkCommandPool cmd_pool;
   VkCommandBuffer cmd;
@@ -47,6 +54,7 @@ typedef struct frame_vk {
   VkFence render_fence;
 
   VkSemaphore swapchain_semaphore;
+  uint32_t swapchain_img_idx;
 } frame_vk;
 
 typedef struct image_vk {
@@ -57,53 +65,73 @@ typedef struct image_vk {
   VkExtent3D extent;
 } image_vk;
 
-enum {K_SWAPCHAIN_MAX_IMAGES = 4};
-typedef struct SwapchainVk {
+enum {
+  K_SWAPCHAIN_MAX_IMAGES = 4,
+  K_SWAPCHAIN_INVALID_IMAGE_INDEX = -1
+};
+
+typedef struct swapchain_vk {
   image_vk images[K_SWAPCHAIN_MAX_IMAGES];
   VkImageView image_views[K_SWAPCHAIN_MAX_IMAGES];
   uint32_t image_count;
 
   VkExtent2D extent;
   VkSwapchainKHR handle;
-} SwapchainVk;
+} swapchain_vk;
 
 int swapchain_create(VkSurfaceKHR surface,
                      uint32_t width,
                      uint32_t height,
-                     SwapchainVk* swapchain,
+                     swapchain_vk* swapchain,
                      MxArena* memory_arena);
-void swapchain_destroy(SwapchainVk* swapchain);
+void swapchain_destroy(swapchain_vk* swapchain);
 
-typedef struct BufferVk {
+typedef struct buffer_vk {
   VkBufferUsageFlags usage;
 
   VmaAllocation allocation;
   VkBuffer handle;
-} BufferVk;
+} buffer_vk;
 
-typedef BufferVk VertexBufferVk;
-typedef BufferVk IndexBufferVk;
+typedef buffer_vk VertexBufferVk;
+typedef buffer_vk IndexBufferVk;
+
+void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, buffer_vk* buffer);
+void buffer_destroy(buffer_vk* buffer);
 
 void vertex_buffer_create(size_t size, const void* data, VertexBufferVk* MX_NOT_NULL buffer);
 void index_buffer_create(size_t size, const void* data, IndexBufferVk* MX_NOT_NULL buffer);
 
-enum {K_TEXTURE_MAX_VIEWS = 4};
 typedef struct texture_vk {
-  VkImageView views[K_TEXTURE_MAX_VIEWS];
-  int view_count;
-
   VmaAllocation allocation;
   image_vk image;
 } texture_vk;
 
-VkImageView texture_get_view(const VkImageAspectFlags aspect, texture_vk* texture);
-
+void texture_create_view(const texture_vk* texture, VkImageAspectFlags aspect, VkImageView* view);
 void texture_create_2d(uint32_t width,
-                    uint32_t height,
-                    VkFormat format,
-                    VkImageUsageFlags usage,
-                    texture_vk* texture);
+                       uint32_t height,
+                       VkFormat format,
+                       VkImageUsageFlags usage,
+                       texture_vk* texture);
+
+void texture_update(size_t size, const void* data, texture_vk *texture);
 void texture_destroy(texture_vk *texture);
+
+enum {MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4};
+typedef struct framebuffer_vk {
+  texture_vk* color_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+  VkImageView color_attachment_views[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+  uint32_t color_attachment_count;
+
+  texture_vk* depth_attachment;
+  VkImageView depth_attachment_view;
+} framebuffer_vk;
+
+void framebuffer_create(uint32_t color_attachment_count,
+                        texture_vk* color_attachments,
+                        texture_vk* depth_attachment,
+                        framebuffer_vk* framebuffer);
+void framebuffer_destroy(framebuffer_vk* fb);
 
 enum { K_SHADER_MAX_DESCRIPTOR_SET = 4};
 enum {K_SHADER_MAX_DESCRIPTOR_BINDING = 8};
@@ -143,8 +171,12 @@ typedef struct program_vk {
   VkPipeline pipeline;
 } program_vk;
 
+
 void program_create_compute(const shader_vk* cs, program_vk* program);
-void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_vk* program);
+void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb, program_vk* program);
+
+// TODO: Descriptors.
+void create_sampler(VkFilter filter, VkSampler* sampler);
 
 void program_create_descriptor_sets(const program_vk* program,
                                     const VkDescriptorBufferInfo* ds_buffer_infos,
@@ -157,11 +189,17 @@ extern PFN_vkCmdBeginRenderingKHR vk_cmd_begin_rendering_khr;
 extern PFN_vkCmdEndRenderingKHR vk_cmd_end_rendering_khr;
 
 // Commands.
-typedef struct buffer_copy_cmd_vk {
+typedef struct buffer_to_buffer_copy_vk {
   VkBufferCopy copy;
-  const BufferVk* src;
-  const BufferVk* dst;
-} buffer_copy_cmd_vk;
+  const buffer_vk* src;
+  buffer_vk* dst;
+} buffer_to_buffer_copy_vk;
+
+typedef struct buffer_to_image_copy_vk {
+  VkBufferImageCopy copy;
+  const buffer_vk* src;
+  image_vk* dst;
+} buffer_to_image_copy_vk;
 
 void vk_cmd_transition_image(VkCommandBuffer cmd,
                              image_vk* image,
@@ -178,11 +216,15 @@ void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
                                 VkImageAspectFlags aspect,
                                 image_vk* dst);
 
+void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb);
+void vk_cmd_end_rendering(VkCommandBuffer cmd);
+
 //TODO: Change to encoder
 typedef struct DrawCtx {
   VkCommandBuffer cmd;
   image_vk* frame_target;
 } DrawCtx;
+
 extern void mgfx_example_updates(const DrawCtx* frame);
 
 #endif

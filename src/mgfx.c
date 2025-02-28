@@ -1,6 +1,7 @@
 #include "mgfx/mgfx.h"
 #include "mgfx/defines.h"
 
+#include "mx/mx_math.h"
 #include "renderer_vk.h"
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
@@ -18,6 +19,10 @@
 #include <spirv_reflect/spirv_reflect.h>
 
 #include <mx/mx_memory.h>
+
+const char* MX_LOG_COLOR_ERROR = "\033[0;31m";
+const char* MX_LOG_COLOR_WARN = "\033[0;33m";
+const char* MX_LOG_COLOR_RESET = "\033[0m";
 
 #include <string.h>
 #include <assert.h>
@@ -70,6 +75,11 @@ const VkDescriptorPoolSize k_ds_pool_sizes[] = {
     .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
     .descriptorCount = 1
   },
+
+  {
+    .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    .descriptorCount = 1
+  },
 }; 
 const uint32_t k_ds_pool_sizes_count = sizeof(k_ds_pool_sizes) / sizeof(VkDescriptorPoolSize);
 
@@ -91,13 +101,41 @@ void destroy_create_debug_util_messenger_ext(VkInstance instance, VkDebugUtilsMe
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-    void* pUserData) {
+  VkDebugUtilsMessageSeverityFlagBitsEXT msg_severity,
+  VkDebugUtilsMessageTypeFlagsEXT msg_type,
+  const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+  void* pUserData) {
 
-    printf("[VkValidationLayer]: %s\n", pCallbackData->pMessage);
-    return VK_FALSE;
+  static const char* msg_type_strings[0x9] = {
+    [0x00000001] = "VK_GENERAL",
+    [0x00000002] = "VK_VALIDATION",
+    [0x00000004] = "VK_PERFORMANCE",
+    [0x00000008] = "VK_DEVICE_ADDRESS_BINDING",
+  };
+
+  switch(msg_severity) {
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+      printf("[%s]: %s\n", msg_type_strings[msg_type], pCallbackData->pMessage);
+      break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+      printf("[%s]: %s\n", msg_type_strings[msg_type], pCallbackData->pMessage);
+      break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+      printf("%s", MX_LOG_COLOR_WARN);
+      printf("[%s]: %s\n", msg_type_strings[msg_type], pCallbackData->pMessage);
+      printf("%s", MX_LOG_COLOR_RESET);
+      break;
+    case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+      printf("%s[%s]:", MX_LOG_COLOR_ERROR, msg_type_strings[msg_type]);
+      printf("%s %s\n", MX_LOG_COLOR_WARN, pCallbackData->pMessage);
+      printf("%s", MX_LOG_COLOR_RESET);
+      break;
+    default:
+      break;
+  };
+
+  assert(0);
+  return VK_FALSE;
 }
 
 static VkDebugUtilsMessengerEXT s_debug_messenger;
@@ -113,29 +151,35 @@ static uint32_t s_queue_indices[MGFX_QUEUE_COUNT];
 
 static VkSurfaceKHR s_surface = VK_NULL_HANDLE;
 static VkSurfaceCapabilitiesKHR s_surface_caps;
-static SwapchainVk s_swapchain;
+static swapchain_vk s_swapchain;
 
-enum {MGFX_MAX_FRAME_OVERLAP = 2};
-static frame_vk s_frames[MGFX_MAX_FRAME_OVERLAP];
+static frame_vk s_frames[MGFX_FRAME_COUNT];
 static uint32_t s_frame_idx = 0;
 
-VkDescriptorPool s_ds_pool;
+static VkDescriptorPool s_ds_pool;
 
 enum {MGFX_MAX_FRAME_BUFFER_COPIES = 16};
-static buffer_copy_cmd_vk s_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
-static uint32_t s_buffer_copy_count = 0;
+static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
+static uint32_t s_buffer_to_buffer_copy_count = 0;
 
-BufferVk s_vertex_staging_buffer;
-size_t s_vertex_staging_buffer_offset;
+static buffer_vk s_vertex_staging_buffer;
+static size_t s_vertex_staging_buffer_offset;
 
-BufferVk s_index_staging_buffer;
-size_t s_index_staging_buffer_offset;
+static buffer_vk s_index_staging_buffer;
+static size_t s_index_staging_buffer_offset;
 
-int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, SwapchainVk* swapchain, MxArena* memory_arena) {
+static buffer_to_image_copy_vk s_buffer_to_image_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
+static uint32_t s_buffer_to_image_copy_count = 0;
+
+static buffer_vk s_image_staging_buffer;
+static size_t s_image_staging_buffer_offset;
+
+int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, swapchain_vk* swapchain, MxArena* memory_arena) {
   MxArena* local_arena = memory_arena;
 
+  MxArena temp_arena;
   if(memory_arena == NULL) {
-    MxArena temp_arena = mx_arena_alloc(MX_KB);
+    temp_arena = mx_arena_alloc(MX_KB);
     local_arena = &temp_arena;
   } 
 
@@ -183,10 +227,11 @@ int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, Swap
 
   vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->image_count, NULL);
   if(swapchain->image_count > K_SWAPCHAIN_MAX_IMAGES) {
-    printf("Requested swapchain images larger than max capacity!");
-    return -1;
+    printf("%s Requested swapchain image count (%d) larger than max capacity %d!\n", MX_LOG_COLOR_ERROR,
+           swapchain->image_count, K_SWAPCHAIN_MAX_IMAGES);
+    printf("%s", MX_LOG_COLOR_RESET);
+    assert(0);
   }
-
   VkImage* images = mx_arena_push(local_arena, swapchain->image_count * sizeof(VkImage));
   vkGetSwapchainImagesKHR(s_device, swapchain->handle, &swapchain->image_count, images);
 
@@ -228,7 +273,7 @@ int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, Swap
   return MGFX_SUCCESS;
 }
 
-void swapchain_destroy(SwapchainVk* swapchain) {
+void swapchain_destroy(swapchain_vk* swapchain) {
   for(uint32_t i = 0; i < swapchain->image_count; i++) {
     vkDestroyImageView(s_device, swapchain->image_views[i], NULL);
   }
@@ -236,7 +281,7 @@ void swapchain_destroy(SwapchainVk* swapchain) {
   vkDestroySwapchainKHR(s_device, swapchain->handle, NULL);
 }
 
-void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, BufferVk* buffer) {
+void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, buffer_vk* buffer) {
   buffer->usage = usage;
 
   VkBufferCreateInfo info = {
@@ -276,7 +321,7 @@ void vertex_buffer_create(size_t size, const void* data, VertexBufferVk* buffer)
     .size = size,
   };
 
-  s_buffer_copy_queue[s_buffer_copy_count++] = (buffer_copy_cmd_vk){
+  s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] = (buffer_to_buffer_copy_vk){
     .copy = {
       .srcOffset = 0,
       .dstOffset = 0 ,
@@ -305,7 +350,7 @@ void index_buffer_create(size_t size, const void* data, IndexBufferVk* buffer) {
     .size = size,
   };
 
-  s_buffer_copy_queue[s_buffer_copy_count++] = (buffer_copy_cmd_vk){
+  s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] = (buffer_to_buffer_copy_vk){
     .copy = {
       .srcOffset = 0,
       .dstOffset = 0 ,
@@ -316,14 +361,19 @@ void index_buffer_create(size_t size, const void* data, IndexBufferVk* buffer) {
   };
 };
 
+void buffer_destroy(buffer_vk* buffer) {
+  vmaDestroyBuffer(s_allocator, buffer->handle, buffer->allocation);
+}
+
 void texture_create_2d(uint32_t width,
                     uint32_t height,
                     VkFormat format,
                     VkImageUsageFlags usage,
                     texture_vk* texture) {
-
   texture->image.format = format;
   texture->image.extent = (VkExtent3D) {width, height, 1};
+
+  usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
   VkImageCreateInfo image_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -356,7 +406,7 @@ void texture_create_2d(uint32_t width,
                   NULL));
 }
 
-VkImageView texture_get_view(const VkImageAspectFlags aspect, texture_vk* texture) {
+void texture_create_view(const texture_vk* texture, VkImageAspectFlags aspect, VkImageView* view) {
   VkImageViewCreateInfo info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = NULL,
@@ -379,19 +429,68 @@ VkImageView texture_get_view(const VkImageAspectFlags aspect, texture_vk* textur
     },
   };
 
-  assert(texture->view_count < K_TEXTURE_MAX_VIEWS && "Max texture views reached!");
-  VK_CHECK(vkCreateImageView(s_device, &info, NULL, &texture->views[texture->view_count]));
-  return texture->views[texture->view_count++];
+  VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
 }
+
+void texture_update(size_t size, const void* data, texture_vk *texture)  {
+  void* bound_memory;
+  vmaMapMemory(s_allocator, s_image_staging_buffer.allocation, &bound_memory);
+  memcpy(bound_memory + s_image_staging_buffer_offset, data, size);
+  vmaUnmapMemory(s_allocator, s_image_staging_buffer.allocation);
+
+  s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] = (buffer_to_image_copy_vk) {
+    .copy = {
+      .bufferOffset = s_image_staging_buffer_offset,
+      .bufferRowLength = 0,
+      .bufferImageHeight = 0,
+      .imageSubresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .mipLevel = 0,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+      },
+      .imageOffset = 0,
+      .imageExtent = texture->image.extent,
+    },
+    .src = &s_image_staging_buffer,
+    .dst = &texture->image,
+  };
+
+  s_image_staging_buffer_offset += size;
+};
 
 void texture_destroy(texture_vk *texture) {
   vkDeviceWaitIdle(s_device);
 
-  for(int i = 0; i < texture->view_count; i++) {
-    vkDestroyImageView(s_device, texture->views[i], NULL);
+  vmaDestroyImage(s_allocator, texture->image.handle, texture->allocation);
+}
+
+void framebuffer_create(uint32_t color_attachment_count,
+                        texture_vk* color_attachments,
+                        texture_vk* depth_attachment,
+                        framebuffer_vk* framebuffer) {
+  framebuffer->color_attachment_count = color_attachment_count;
+  for(int i = 0; i < color_attachment_count; i++) {
+    framebuffer->color_attachments[i] = &color_attachments[i];
+    texture_create_view(framebuffer->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT, &framebuffer->color_attachment_views[i]);
   }
 
-  vmaDestroyImage(s_allocator, texture->image.handle, texture->allocation);
+  if(depth_attachment) {
+    framebuffer->depth_attachment = depth_attachment;
+    texture_create_view(framebuffer->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT, &framebuffer->depth_attachment_view);
+  }
+}
+
+void framebuffer_destroy(framebuffer_vk* fb) {
+  for(int i = 0; i < fb->color_attachment_count; i++) {
+    fb->color_attachments[i] = NULL;
+    vkDestroyImageView(s_device, fb->color_attachment_views[i], NULL);
+  }
+
+  if(fb->depth_attachment) {
+    fb->depth_attachment = NULL;
+    vkDestroyImageView(s_device, fb->depth_attachment_view, NULL);
+  }
 }
 
 void program_create_descriptor_sets(const program_vk* program,
@@ -461,23 +560,25 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     if(input_count > 0) {
       SpvReflectInterfaceVariable** input_variables = mx_arena_push(&shader_arena, input_count * sizeof(SpvReflectInterfaceVariable));
       spvReflectEnumerateInputVariables(&module, &input_count, input_variables);
-      shader->vertex_attribute_count = input_count;
 
-      // Sort by location.
+      // Sort by location and filter out built in variables.
       const SpvReflectInterfaceVariable* sorted_iv[input_count] = {};
+      uint32_t sorted_iv_count = 0;
       for(uint32_t i = 0; i < input_count; i++) {
         const SpvReflectInterfaceVariable* input_variable = input_variables[i];
-        sorted_iv[input_variable->location] = input_variable;
-      }
-
-      uint32_t input_offset = 0;
-      for(uint32_t i = 0; i < input_count; i++) {
-        const SpvReflectInterfaceVariable* input_variable = sorted_iv[i];
 
         if(input_variable->built_in != -1) {
           continue;
         }
 
+        sorted_iv[input_variable->location] = input_variable;
+        ++sorted_iv_count;
+      }
+      shader->vertex_attribute_count = sorted_iv_count;
+
+      uint32_t input_offset = 0;
+      for(uint32_t i = 0; i < sorted_iv_count; i++) {
+        const SpvReflectInterfaceVariable* input_variable = sorted_iv[i];
         shader->vertex_attributes[i] = (VkVertexInputAttributeDescription) {
           .location = input_variable->location,
           .binding = 0,
@@ -493,12 +594,14 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
       }
 
       // TODO: Support multiple vertex buffer bindings.
-      shader->vertex_binding_count = 1;
-      shader->vertex_bindings[0] = (VkVertexInputBindingDescription){
-          .binding = 0,
-          .stride = input_offset,
-          .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-      };
+      if(shader->vertex_attribute_count > 0) {
+        shader->vertex_binding_count = 1;
+        shader->vertex_bindings[0] = (VkVertexInputBindingDescription) {
+            .binding = 0,
+            .stride = input_offset,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+      }
     }
   }
 
@@ -564,6 +667,31 @@ void shader_destroy(shader_vk* shader) {
   vkDestroyShaderModule(s_device, shader->module, NULL);
 }
 
+void create_sampler(VkFilter filter, VkSampler* sampler){
+  VkSamplerCreateInfo info = {
+    .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+    .pNext = NULL,
+    .flags = 0 ,
+    .magFilter = VK_FILTER_LINEAR,
+    .minFilter = VK_FILTER_LINEAR,
+    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+    .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    .mipLodBias = 0,
+    .anisotropyEnable = VK_FALSE,
+    .maxAnisotropy = 0,
+    .compareEnable = VK_FALSE,
+    .compareOp = VK_COMPARE_OP_ALWAYS,
+    .minLod = 0.0f,
+    .maxLod = 1.0f,
+    .borderColor = {},
+    .unnormalizedCoordinates = {},
+  };
+
+  VK_CHECK(vkCreateSampler(s_device, &info, NULL, sampler));
+};
+
 void program_create_compute(const shader_vk* cs, program_vk* program) {
   program->shaders[MGFX_SHADER_STAGE_COMPUTE] = cs;
 
@@ -623,7 +751,7 @@ void program_create_compute(const shader_vk* cs, program_vk* program) {
   VK_CHECK(vkCreateComputePipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
 }
 
-void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_vk* program) {
+void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb, program_vk* program) {
   program->shaders[MGFX_SHADER_STAGE_VERTEX] = vs;
   program->shaders[MGFX_SHADER_STAGE_FRAGMENT] = fs;
 
@@ -717,22 +845,26 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_v
     .alphaToOneEnable= VK_FALSE,
   }; info.pMultisampleState = &multisample_state_info;
 
-  VkPipelineDepthStencilStateCreateInfo depth_stencil_state_info = {
-    /*.sType;*/
-    /*.pNext;*/
-    /*.flags;*/
-    /*.depthTestEnable;*/
-    /*.depthWriteEnable;*/
-    /*.depthCompareOp;*/
-    /*.depthBoundsTestEnable;*/
-    /*.stencilTestEnable;*/
-    /*.front;*/
-    /*.back;*/
-    /*.minDepthBounds;*/
-    /*.maxDepthBounds;*/
-  }; info.pDepthStencilState = NULL;
+  if(fb->depth_attachment) {
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+      .pNext = NULL,
+      .flags = 0,
+      .depthTestEnable = VK_TRUE,
+      .depthWriteEnable = VK_TRUE,
+      .depthCompareOp = VK_COMPARE_OP_LESS,
+      .depthBoundsTestEnable = VK_FALSE,
+      .stencilTestEnable = VK_FALSE,
+      .front = {},
+      .back = {},
+      .minDepthBounds = 0.0f,
+      .maxDepthBounds = 1.0f,
+    }; info.pDepthStencilState = &depth_stencil_state_info;
+  } else {
+    info.pDepthStencilState = NULL;
+  }
 
-  VkPipelineColorBlendAttachmentState color_attachment = {
+  VkPipelineColorBlendAttachmentState color_blend_attachment= {
     .blendEnable = VK_FALSE,
     .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
     .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
@@ -753,7 +885,7 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_v
     .logicOpEnable = VK_FALSE,
     .logicOp = VK_LOGIC_OP_COPY,
     .attachmentCount = 1,
-    .pAttachments = &color_attachment,
+    .pAttachments = &color_blend_attachment,
     /*.blendConstants[4], */  // Set to Zero
   }; info.pColorBlendState = &color_blend_state_info;
 
@@ -821,18 +953,21 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, program_v
   }; VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_info, NULL, &program->layout));
   info.layout = program->layout;
 
-  // TODO: Get from color attachment
-  VkFormat color_attachment_format = VK_FORMAT_R16G16B16A16_SFLOAT;
-
   // Dynamic Rendering.
   info.renderPass = NULL;
+
+  VkFormat color_attachment_formats[fb->color_attachment_count] = {};
+  for(int i = 0; i < fb->color_attachment_count; i++) {
+    color_attachment_formats[i] = fb->color_attachments[i]->image.format;
+  }
+
   VkPipelineRenderingCreateInfoKHR rendering_create_info = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
     .pNext = NULL,
     .viewMask = 0,
-    .colorAttachmentCount = 1,
-    .pColorAttachmentFormats = &color_attachment_format,
-    .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
+    .colorAttachmentCount = fb->color_attachment_count,
+    .pColorAttachmentFormats = color_attachment_formats,
+    .depthAttachmentFormat = fb->depth_attachment ? fb->depth_attachment->image.format : VK_FORMAT_UNDEFINED,
     .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
   }; info.pNext = &rendering_create_info;
 
@@ -851,6 +986,9 @@ void program_destroy(program_vk* program) {
   vkDestroyPipelineLayout(s_device, program->layout, NULL);
   vkDestroyPipeline(s_device, program->pipeline, NULL);
 }
+
+uint32_t s_width;
+uint32_t s_height;
 
 int mgfx_init(const mgfx_init_info* info) {
   MxArena vk_init_arena = mx_arena_alloc(MX_MB);
@@ -1074,7 +1212,7 @@ int mgfx_init(const mgfx_init_info* info) {
     /*.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,*/
   }; VK_CHECK(vmaCreateAllocator(&allocator_info, &s_allocator));
 
-  for(int i = 0; i < MGFX_MAX_FRAME_OVERLAP; i++) {
+  for(int i = 0; i < MGFX_FRAME_COUNT; i++) {
     VkCommandPoolCreateInfo gfx_cmd_pool = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .pNext = NULL,
@@ -1107,6 +1245,8 @@ int mgfx_init(const mgfx_init_info* info) {
       .pNext = NULL,
       .flags = VK_FENCE_CREATE_SIGNALED_BIT,
     }; VK_CHECK(vkCreateFence(s_device, &fence_info, NULL, &s_frames[i].render_fence));
+
+    s_frames[i].swapchain_img_idx = -1;
   }
 
   VkDescriptorPoolCreateInfo ds_pool_info = {
@@ -1118,26 +1258,60 @@ int mgfx_init(const mgfx_init_info* info) {
     .pPoolSizes = k_ds_pool_sizes,
   }; VK_CHECK(vkCreateDescriptorPool(s_device, &ds_pool_info, NULL, &s_ds_pool));
 
+  // Initialize staging buffers
+  enum {MGFX_MAX_IMAGE_SIZE = MX_MB * 100};
+  buffer_create(MGFX_MAX_IMAGE_SIZE, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+                &s_image_staging_buffer);
+
   mx_arena_free(&vk_init_arena);
   return MGFX_SUCCESS;
 }
 
+mx_bool resize_flag = MX_FALSE;
 void mgfx_frame() {
+  if(resize_flag == MX_TRUE) {
+    VK_CHECK(vkWaitForFences(s_device, 1, &s_frames[(s_frame_idx - 1) % MGFX_FRAME_COUNT].render_fence, VK_TRUE, UINT64_MAX));
+    vkDeviceWaitIdle(s_device);
+
+    swapchain_destroy(&s_swapchain);
+
+    int width = s_width;
+    int height = s_height;
+
+    if(s_surface_caps.currentExtent.width == UINT32_MAX) {
+      width = clampf(width, s_surface_caps.minImageExtent.width, s_surface_caps.maxImageExtent.width);
+      height = clampf(height, s_surface_caps.minImageExtent.height, s_surface_caps.maxImageExtent.height);
+    }
+
+    swapchain_create(s_surface, width, height, &s_swapchain, NULL);
+    resize_flag = MX_FALSE;
+  }
+
   // Get current frame.
-  const frame_vk* frame = &s_frames[s_frame_idx];
+  frame_vk* frame = &s_frames[s_frame_idx];
 
   // Wait and reset render fence of current frame idx.
   VK_CHECK(vkWaitForFences(s_device, 1, &frame->render_fence, VK_TRUE, UINT64_MAX));
-  VK_CHECK(vkResetFences(s_device, 1, &frame->render_fence));
 
-  // Wait for available next swapchain image.
-  uint32_t sc_img_idx;
-  VK_CHECK(vkAcquireNextImageKHR(s_device,
-                        s_swapchain.handle,
-                        UINT64_MAX,
-                        frame->swapchain_semaphore,
-                        NULL,
-                        &sc_img_idx));
+  if(frame->swapchain_img_idx == K_SWAPCHAIN_INVALID_IMAGE_INDEX) {
+    // Wait for available next swapchain image.
+    VkResult acquire_sc_image_result = vkAcquireNextImageKHR(s_device, s_swapchain.handle, UINT64_MAX,
+                                                             frame->swapchain_semaphore, NULL, &frame->swapchain_img_idx);
+    switch(acquire_sc_image_result) {
+      case(VK_SUBOPTIMAL_KHR):
+      case(VK_ERROR_OUT_OF_DATE_KHR): {
+        resize_flag = MX_TRUE;
+        return;
+      }break;
+
+      default:
+        VK_CHECK(acquire_sc_image_result);
+        break;
+    }
+  }
+
+  VK_CHECK(vkResetFences(s_device, 1, &frame->render_fence));
 
   vkResetCommandBuffer(frame->cmd, 0);
   VkCommandBufferBeginInfo cmd_begin_info = {
@@ -1147,18 +1321,18 @@ void mgfx_frame() {
     .pInheritanceInfo = NULL,
   }; VK_CHECK(vkBeginCommandBuffer(frame->cmd, &cmd_begin_info));
 
-  // Buffer copy queue
-  if(s_buffer_copy_count > 0) {
+  // Buffer to buffer copy queue
+  if(s_buffer_to_buffer_copy_count > 0) {
     VkMemoryBarrier vb_copy_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
     uint32_t vb_copy_barrier_count = 0;
 
-    for(int i = 0; i < s_buffer_copy_count; i++) {
+    for(int i = 0; i < s_buffer_to_buffer_copy_count; i++) {
       vkCmdCopyBuffer(frame->cmd,
-                      s_buffer_copy_queue[i].src->handle,
-                      s_buffer_copy_queue[i].dst->handle,
-                      1, &s_buffer_copy_queue[i].copy);
+                      s_buffer_to_buffer_copy_queue[i].src->handle,
+                      s_buffer_to_buffer_copy_queue[i].dst->handle,
+                      1, &s_buffer_to_buffer_copy_queue[i].copy);
 
-      if((s_buffer_copy_queue[i].dst->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) == VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
+      if((s_buffer_to_buffer_copy_queue[i].dst->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) == VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
         vb_copy_barriers[vb_copy_barrier_count] = (VkMemoryBarrier) {
           .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
           .pNext = NULL,
@@ -1170,7 +1344,7 @@ void mgfx_frame() {
         continue;
       };
 
-      if((s_buffer_copy_queue[i].dst->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) == VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
+      if((s_buffer_to_buffer_copy_queue[i].dst->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) == VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
         vb_copy_barriers[vb_copy_barrier_count] = (VkMemoryBarrier) {
           .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
           .pNext = NULL,
@@ -1186,22 +1360,92 @@ void mgfx_frame() {
     // Vertex buffer memory barriers
     vkCmdPipelineBarrier(frame->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0,
                          vb_copy_barrier_count, vb_copy_barriers, 0, NULL, 0, NULL);
+    s_buffer_to_buffer_copy_count = 0;
+  }
 
-    s_buffer_copy_count = 0;
+  // Buffer to image copy queue 
+  if(s_buffer_to_image_copy_count > 0) {
+    VkImageMemoryBarrier sampled_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
+    uint32_t sampled_copy_count = 0;
+
+    VkImageMemoryBarrier pre_copy_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
+    uint32_t pre_copy_count = 0;
+
+    for(int i = 0; i < s_buffer_to_image_copy_count; i++) {
+      pre_copy_barriers[pre_copy_count++] = (VkImageMemoryBarrier) {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = NULL,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = s_buffer_to_image_copy_queue[i].dst->layout,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = s_buffer_to_image_copy_queue[i].dst->handle,
+        .subresourceRange = {
+          .aspectMask = s_buffer_to_image_copy_queue[i].copy.imageSubresource.aspectMask,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = s_buffer_to_image_copy_queue[i].copy.imageSubresource.baseArrayLayer,
+          .layerCount = s_buffer_to_image_copy_queue[i].copy.imageSubresource.layerCount,
+        },
+      };
+      s_buffer_to_image_copy_queue[i].dst->layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+      // TODO: Check if sampled.
+      sampled_barriers[sampled_copy_count++] = (VkImageMemoryBarrier) {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = NULL,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = s_buffer_to_image_copy_queue[i].dst->layout,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = s_buffer_to_image_copy_queue[i].dst->handle,
+        .subresourceRange = {
+          .aspectMask = s_buffer_to_image_copy_queue[i].copy.imageSubresource.aspectMask,
+          .baseMipLevel = 0,
+          .levelCount = 1,
+          .baseArrayLayer = s_buffer_to_image_copy_queue[i].copy.imageSubresource.baseArrayLayer,
+          .layerCount = s_buffer_to_image_copy_queue[i].copy.imageSubresource.layerCount,
+        },
+      };
+
+      s_buffer_to_image_copy_queue[i].dst->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    // Fragment Sampled image memory barriers
+    vkCmdPipelineBarrier(frame->cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, NULL, 0, NULL, pre_copy_count, pre_copy_barriers);
+
+    for(int i = 0; i < s_buffer_to_image_copy_count; i++) {
+      vkCmdCopyBufferToImage(frame->cmd, 
+                             s_buffer_to_image_copy_queue[i].src->handle,
+                             s_buffer_to_image_copy_queue[i].dst->handle,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+                             1, &s_buffer_to_image_copy_queue[i].copy);
+    }
+
+    // Fragment Sampled image memory barriers
+    vkCmdPipelineBarrier(frame->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                         0, NULL, 0, NULL, sampled_copy_count, sampled_barriers);
+
+    s_buffer_to_image_copy_count = 0;
   }
 
   vk_cmd_transition_image(frame->cmd,
-                          &s_swapchain.images[sc_img_idx],
+                          &s_swapchain.images[frame->swapchain_img_idx],
                           VK_IMAGE_ASPECT_COLOR_BIT,
                           VK_IMAGE_LAYOUT_GENERAL);
 
   DrawCtx ctx = {
     .cmd = frame->cmd,
-    .frame_target = &s_swapchain.images[sc_img_idx],
+    .frame_target = &s_swapchain.images[frame->swapchain_img_idx],
   }; mgfx_example_updates(&ctx);
 
   vk_cmd_transition_image(frame->cmd,
-                          &s_swapchain.images[sc_img_idx],
+                          &s_swapchain.images[frame->swapchain_img_idx],
                           VK_IMAGE_ASPECT_COLOR_BIT,
                           VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
@@ -1227,11 +1471,25 @@ void mgfx_frame() {
     .pWaitSemaphores = &frame->render_semaphore,
     .swapchainCount = 1,
     .pSwapchains = &s_swapchain.handle,
-    .pImageIndices = &sc_img_idx,
+    .pImageIndices = &frame->swapchain_img_idx,
     .pResults = NULL,
-  }; VK_CHECK(vkQueuePresentKHR(s_queues[MGFX_QUEUE_GRAPHICS], &present_info));
+  };
 
-  s_frame_idx = (s_frame_idx + 1) % MGFX_MAX_FRAME_OVERLAP;
+  VkResult present_result = vkQueuePresentKHR(s_queues[MGFX_QUEUE_GRAPHICS], &present_info);
+  switch(present_result) {
+    case(VK_ERROR_OUT_OF_DATE_KHR): {
+      resize_flag = MX_TRUE;
+      return;
+    }break;
+
+    default:
+      VK_CHECK(present_result);
+      break;
+  }
+
+  // Invalidate consumed frame image
+  frame->swapchain_img_idx = K_SWAPCHAIN_INVALID_IMAGE_INDEX;
+  s_frame_idx = (s_frame_idx + 1) % MGFX_FRAME_COUNT;
 };
 
 void mgfx_shutdown() {
@@ -1239,7 +1497,7 @@ void mgfx_shutdown() {
 
   vkDestroyDescriptorPool(s_device, s_ds_pool, NULL);
 
-  for(int i = 0; i < MGFX_MAX_FRAME_OVERLAP; i++) {
+  for(int i = 0; i < MGFX_FRAME_COUNT; i++) {
     vkDestroyCommandPool(s_device, s_frames[i].cmd_pool, NULL);
 
     vkDestroySemaphore(s_device, s_frames[i].render_semaphore, NULL);
@@ -1259,4 +1517,9 @@ void mgfx_shutdown() {
 #endif
 
   vkDestroyInstance(s_instance, NULL);
+}
+
+void mgfx_reset(uint32_t width, uint32_t height) {
+  s_width = width;
+  s_height = height;
 }
