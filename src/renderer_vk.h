@@ -54,7 +54,6 @@ typedef struct frame_vk {
   VkFence render_fence;
 
   VkSemaphore swapchain_semaphore;
-  uint32_t swapchain_img_idx;
 } frame_vk;
 
 typedef struct image_vk {
@@ -67,8 +66,8 @@ typedef struct image_vk {
 
 enum {
   K_SWAPCHAIN_MAX_IMAGES = 4,
-  K_SWAPCHAIN_INVALID_IMAGE_INDEX = -1
 };
+
 
 typedef struct swapchain_vk {
   image_vk images[K_SWAPCHAIN_MAX_IMAGES];
