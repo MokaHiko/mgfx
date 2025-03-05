@@ -94,7 +94,7 @@ static uint32_t k_indices[] = {
 const size_t k_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
 // Frame buffer.
-texture_vk color_attachment;
+image_vk color_attachment;
 framebuffer_vk mesh_pass_fb;
 
 shader_vk vertex_shader;
@@ -111,7 +111,7 @@ index_buffer_vk index_buffer;
 int width  = APP_WIDTH;
 int height = APP_HEIGHT;
 void mgfx_example_init() {
-    texture_create_2d(width, height, VK_FORMAT_R16G16B16A16_SFLOAT,
+    image_create_2d(width, height, VK_FORMAT_R16G16B16A16_SFLOAT,
                       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
                       &color_attachment);
@@ -140,10 +140,10 @@ void mgfx_example_updates(const DrawCtx* ctx) {
     VkClearColorValue clear       = {.float32 = {0.6f, 0.5f, 0.2f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment.image, VK_IMAGE_ASPECT_COLOR_BIT,
+    vk_cmd_transition_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    vk_cmd_clear_image(ctx->cmd, &color_attachment.image, &range, &clear);
+    vk_cmd_clear_image(ctx->cmd, &color_attachment, &range, &clear);
 
     static struct ComputePC {
         float time;
@@ -151,22 +151,6 @@ void mgfx_example_updates(const DrawCtx* ctx) {
     pc.time += 0.001;
 
     vk_cmd_begin_rendering(ctx->cmd, &mesh_pass_fb);
-
-    VkViewport view_port = {
-        .x        = 0,
-        .y        = 0,
-        .width    = width,
-        .height   = height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
-    };
-    vkCmdSetViewport(ctx->cmd, 0, 1, &view_port);
-
-    VkRect2D scissor = {
-        .offset = {0, 0},
-        .extent = {width, height},
-    };
-    vkCmdSetScissor(ctx->cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gfx_program.pipeline);
 
@@ -205,13 +189,13 @@ void mgfx_example_updates(const DrawCtx* ctx) {
 
     vk_cmd_end_rendering(ctx->cmd);
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment.image, VK_IMAGE_ASPECT_COLOR_BIT,
+    vk_cmd_transition_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
     vk_cmd_transition_image(ctx->cmd, ctx->frame_target, VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-    vk_cmd_copy_image_to_image(ctx->cmd, &color_attachment.image, VK_IMAGE_ASPECT_COLOR_BIT,
+    vk_cmd_copy_image_to_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT,
                                ctx->frame_target);
 }
 
@@ -220,7 +204,7 @@ void mgfx_example_shutdown() {
     buffer_destroy(&index_buffer);
 
     framebuffer_destroy(&mesh_pass_fb);
-    texture_destroy(&color_attachment);
+    image_destroy(&color_attachment);
 
     program_destroy(&compute_program);
     shader_destroy(&compute_shader);

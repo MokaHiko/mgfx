@@ -653,32 +653,32 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
     int height = 0;
 
     if (fb->color_attachment_count > 0) {
-        width  = fb->color_attachments[0]->image.extent.width;
-        height = fb->color_attachments[0]->image.extent.height;
+        width  = fb->color_attachments[0]->extent.width;
+        height = fb->color_attachments[0]->extent.height;
     } else if (fb->depth_attachment) {
-        width  = fb->depth_attachment->image.extent.width;
-        height = fb->depth_attachment->image.extent.height;
+        width  = fb->depth_attachment->extent.width;
+        height = fb->depth_attachment->extent.height;
     } else {
     }
 
     for (uint32_t i = 0; i < fb->color_attachment_count; i++) {
-        vk_cmd_transition_image(cmd, &fb->color_attachments[i]->image, VK_IMAGE_ASPECT_COLOR_BIT,
+        vk_cmd_transition_image(cmd, fb->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT,
                                 VK_IMAGE_LAYOUT_GENERAL);
     }
 
     if (fb->depth_attachment) {
-        vk_cmd_transition_image(cmd, &fb->depth_attachment->image, VK_IMAGE_ASPECT_DEPTH_BIT,
+        vk_cmd_transition_image(cmd, fb->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT,
                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
-    VkRenderingAttachmentInfo color_attachment_infos[fb->color_attachment_count] = {};
+    VkRenderingAttachmentInfo color_attachment_infos[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS] = {};
 
     for (uint32_t i = 0; i < fb->color_attachment_count; i++) {
         color_attachment_infos[i] = (VkRenderingAttachmentInfo){
             .sType              = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .pNext              = NULL,
             .imageView          = fb->color_attachment_views[i],
-            .imageLayout        = fb->color_attachments[i]->image.layout,
+            .imageLayout        = fb->color_attachments[i]->layout,
             .resolveMode        = VK_RESOLVE_MODE_NONE,
             .resolveImageView   = VK_NULL_HANDLE,
             .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -691,14 +691,14 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
         .sType     = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .pNext     = NULL,
         .imageView = fb->depth_attachment_view,
-        .imageLayout =
-            fb->depth_attachment ? fb->depth_attachment->image.layout : VK_IMAGE_LAYOUT_UNDEFINED,
+        .imageLayout = fb->depth_attachment ? fb->depth_attachment->layout : VK_IMAGE_LAYOUT_UNDEFINED,
         .resolveMode        = VK_RESOLVE_MODE_NONE,
         .resolveImageView   = VK_NULL_HANDLE,
         .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .loadOp             = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp            = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue         = {.depthStencil = {1.0f, 0}}};
+        .clearValue         = { .depthStencil = {0.0f, 0} }
+    };
 
     VkRenderingInfo rendering_info = {
         .sType                = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -712,7 +712,24 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
         .pDepthAttachment     = &depth_attachment_info,
         .pStencilAttachment   = NULL,
     };
+
     vk_cmd_begin_rendering_khr(cmd, &rendering_info);
+
+    VkViewport view_port = {
+        .x = 0, .y = 0,
+        .width    = width,
+        .height   = height,
+        .minDepth = 1.0f,
+        .maxDepth = 0.0f,
+    };
+
+    vkCmdSetViewport(cmd, 0, 1, &view_port);
+
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = {width, height},
+    };
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
 }
 
 void vk_cmd_end_rendering(VkCommandBuffer cmd) { vk_cmd_end_rendering_khr(cmd); }

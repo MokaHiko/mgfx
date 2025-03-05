@@ -26,12 +26,24 @@
 #include <assert.h>
 #include <string.h>
 
-enum QueuesVk : uint16_t {
+typedef struct MX_API mx_sampler {
+    int magFilter;
+    int minFilter;
+    int mipmapMode;
+    int addressModeU;
+    int addressModeV;
+    int addressModeW;
+    int mipLodBias;
+    int anisotropyEnable;
+    int maxAnisotropy;
+} mx_sampler;
+
+typedef enum queues_vk : uint16_t {
     MGFX_QUEUE_GRAPHICS = 0,
     MGFX_QUEUE_PRESENT,
 
     MGFX_QUEUE_COUNT,
-};
+} queues_vk;
 
 // Extension function pointers.
 PFN_vkCmdBeginRenderingKHR vk_cmd_begin_rendering_khr;
@@ -168,6 +180,101 @@ static uint32_t s_buffer_to_image_copy_count = 0;
 
 static buffer_vk s_image_staging_buffer;
 static size_t s_image_staging_buffer_offset;
+
+void image_create_2d(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, image_vk* image) {
+    image->format = format;
+    image->extent = (VkExtent3D){width, height, 1};
+
+    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    VkImageCreateInfo image_info = {
+        .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext                 = NULL,
+        .flags                 = 0,
+        .imageType             = VK_IMAGE_TYPE_2D,
+        .format                = image->format,
+        .extent                = image->extent,
+        .mipLevels             = 1,
+        .arrayLayers           = 1,
+        .samples               = 1,
+        .tiling                = VK_IMAGE_TILING_OPTIMAL,
+        .usage                 = usage,
+        .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices   = &s_queue_indices[MGFX_QUEUE_GRAPHICS],
+        .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+
+    VmaAllocationCreateInfo alloc_info = {
+        .usage         = VMA_MEMORY_USAGE_GPU_ONLY,
+        .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    };
+
+    VK_CHECK(vmaCreateImage(s_allocator, &image_info, &alloc_info, &image->handle,
+                            &image->allocation, NULL));
+}
+
+void image_create_view(const image_vk* image, VkImageAspectFlags aspect, VkImageView* view) {
+    VkImageViewCreateInfo info = {
+        .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext    = NULL,
+        .flags    = 0,
+        .image    = image->handle,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format   = image->format,
+        .components =
+            {
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+        .subresourceRange =
+            {
+                .aspectMask     = aspect,
+                .baseMipLevel   = 0,
+                .levelCount     = 1,
+                .baseArrayLayer = 0,
+                .layerCount     = 1,
+            },
+    };
+
+    VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
+}
+
+void image_update(size_t size, const void* data, image_vk* image) {
+    void* bound_memory;
+    vmaMapMemory(s_allocator, s_image_staging_buffer.allocation, &bound_memory);
+    memcpy(bound_memory + s_image_staging_buffer_offset, data, size);
+    vmaUnmapMemory(s_allocator, s_image_staging_buffer.allocation);
+
+    s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] = (buffer_to_image_copy_vk){
+        .copy =
+            {
+                .bufferOffset      = s_image_staging_buffer_offset,
+                .bufferRowLength   = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource =
+                    {
+                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .mipLevel       = 0,
+                        .baseArrayLayer = 0,
+                        .layerCount     = 1,
+                    },
+                .imageOffset = 0,
+                .imageExtent = image->extent,
+            },
+        .src = &s_image_staging_buffer,
+        .dst = image,
+    };
+
+    s_image_staging_buffer_offset += size;
+};
+
+void image_destroy(image_vk* image) {
+    vkDeviceWaitIdle(s_device);
+    vmaDestroyImage(s_allocator, image->handle, image->allocation);
+}
 
 int swapchain_create(VkSurfaceKHR surface, uint32_t width, uint32_t height, swapchain_vk* swapchain,
                      mx_arena* memory_arena) {
@@ -366,115 +473,18 @@ void buffer_destroy(buffer_vk* buffer) {
     vmaDestroyBuffer(s_allocator, buffer->handle, buffer->allocation);
 }
 
-void texture_create_2d(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                       texture_vk* texture) {
-    texture->image.format = format;
-    texture->image.extent = (VkExtent3D){width, height, 1};
-
-    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-
-    VkImageCreateInfo image_info = {
-        .sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext                 = NULL,
-        .flags                 = 0,
-        .imageType             = VK_IMAGE_TYPE_2D,
-        .format                = texture->image.format,
-        .extent                = texture->image.extent,
-        .mipLevels             = 1,
-        .arrayLayers           = 1,
-        .samples               = 1,
-        .tiling                = VK_IMAGE_TILING_OPTIMAL,
-        .usage                 = usage,
-        .sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices   = &s_queue_indices[MGFX_QUEUE_GRAPHICS],
-        .initialLayout         = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-
-    VmaAllocationCreateInfo alloc_info = {
-        .usage         = VMA_MEMORY_USAGE_GPU_ONLY,
-        .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    };
-
-    VK_CHECK(vmaCreateImage(s_allocator, &image_info, &alloc_info, &texture->image.handle,
-                            &texture->allocation, NULL));
-}
-
-void texture_create_view(const texture_vk* texture, VkImageAspectFlags aspect, VkImageView* view) {
-    VkImageViewCreateInfo info = {
-        .sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext    = NULL,
-        .flags    = 0,
-        .image    = texture->image.handle,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format   = texture->image.format,
-        .components =
-            {
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-            },
-        .subresourceRange =
-            {
-                .aspectMask     = aspect,
-                .baseMipLevel   = 0,
-                .levelCount     = 1,
-                .baseArrayLayer = 0,
-                .layerCount     = 1,
-            },
-    };
-
-    VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
-}
-
-void texture_update(size_t size, const void* data, texture_vk* texture) {
-    void* bound_memory;
-    vmaMapMemory(s_allocator, s_image_staging_buffer.allocation, &bound_memory);
-    memcpy(bound_memory + s_image_staging_buffer_offset, data, size);
-    vmaUnmapMemory(s_allocator, s_image_staging_buffer.allocation);
-
-    s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] = (buffer_to_image_copy_vk){
-        .copy =
-            {
-                .bufferOffset      = s_image_staging_buffer_offset,
-                .bufferRowLength   = 0,
-                .bufferImageHeight = 0,
-                .imageSubresource =
-                    {
-                        .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .mipLevel       = 0,
-                        .baseArrayLayer = 0,
-                        .layerCount     = 1,
-                    },
-                .imageOffset = 0,
-                .imageExtent = texture->image.extent,
-            },
-        .src = &s_image_staging_buffer,
-        .dst = &texture->image,
-    };
-
-    s_image_staging_buffer_offset += size;
-};
-
-void texture_destroy(texture_vk* texture) {
-    vkDeviceWaitIdle(s_device);
-
-    vmaDestroyImage(s_allocator, texture->image.handle, texture->allocation);
-}
-
-void framebuffer_create(uint32_t color_attachment_count, texture_vk* color_attachments,
-                        texture_vk* depth_attachment, framebuffer_vk* framebuffer) {
+void framebuffer_create(uint32_t color_attachment_count, image_vk* color_attachments,
+                        image_vk* depth_attachment, framebuffer_vk* framebuffer) {
     framebuffer->color_attachment_count = color_attachment_count;
     for (int i = 0; i < color_attachment_count; i++) {
         framebuffer->color_attachments[i] = &color_attachments[i];
-        texture_create_view(framebuffer->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT,
+        image_create_view(framebuffer->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT,
                             &framebuffer->color_attachment_views[i]);
     }
 
     if (depth_attachment) {
         framebuffer->depth_attachment = depth_attachment;
-        texture_create_view(framebuffer->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT,
+        image_create_view(framebuffer->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT,
                             &framebuffer->depth_attachment_view);
     }
 }
@@ -675,9 +685,9 @@ void create_sampler(VkFilter filter, VkSampler* sampler) {
         .magFilter               = VK_FILTER_LINEAR,
         .minFilter               = VK_FILTER_LINEAR,
         .mipmapMode              = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressModeU            = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV            = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW            = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeU            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .mipLodBias              = 0,
         .anisotropyEnable        = VK_FALSE,
         .maxAnisotropy           = 0,
@@ -752,8 +762,7 @@ void program_create_compute(const shader_vk* cs, program_vk* program) {
     VK_CHECK(vkCreateComputePipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
 }
 
-void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb,
-                             program_vk* program) {
+void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb, program_vk* program) {
     program->shaders[MGFX_SHADER_STAGE_VERTEX]   = vs;
     program->shaders[MGFX_SHADER_STAGE_FRAGMENT] = fs;
 
@@ -788,13 +797,10 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .vertexBindingDescriptionCount =
-            program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_binding_count,
+        .vertexBindingDescriptionCount = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_binding_count,
         .pVertexBindingDescriptions = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_bindings,
-        .vertexAttributeDescriptionCount =
-            program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attribute_count,
-        .pVertexAttributeDescriptions =
-            program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attributes,
+        .vertexAttributeDescriptionCount = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attribute_count,
+        .pVertexAttributeDescriptions = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attributes,
     };
     info.pVertexInputState = &vertex_input_state_info;
 
@@ -802,9 +808,9 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
     input_assembly_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly_state_info.pNext = NULL;
     input_assembly_state_info.flags = 0;
-    input_assembly_state_info.topology               = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_assembly_state_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     input_assembly_state_info.primitiveRestartEnable = VK_FALSE;
-    info.pInputAssemblyState                         = &input_assembly_state_info;
+    info.pInputAssemblyState = &input_assembly_state_info;
 
     VkPipelineTessellationStateCreateInfo tesselation_state_info = {
         .sType              = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
@@ -862,7 +868,7 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
             .flags                 = 0,
             .depthTestEnable       = VK_TRUE,
             .depthWriteEnable      = VK_TRUE,
-            .depthCompareOp        = VK_COMPARE_OP_LESS,
+            .depthCompareOp        = VK_COMPARE_OP_GREATER_OR_EQUAL,
             .depthBoundsTestEnable = VK_FALSE,
             .stencilTestEnable     = VK_FALSE,
             .front                 = {},
@@ -918,7 +924,7 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
     int flat_pc_range_count = 0;
 
     const MGFX_SHADER_STAGE gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX, MGFX_SHADER_STAGE_FRAGMENT};
-    const int gfx_stages_count           = sizeof(gfx_stages) / sizeof(MGFX_SHADER_STAGE);
+    const int gfx_stages_count = sizeof(gfx_stages) / sizeof(MGFX_SHADER_STAGE);
 
     for (int i = 0; i < gfx_stages_count; i++) {
         const shader_vk* shader = program->shaders[gfx_stages[i]];
@@ -967,7 +973,7 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
 
     VkFormat color_attachment_formats[fb->color_attachment_count] = {};
     for (int i = 0; i < fb->color_attachment_count; i++) {
-        color_attachment_formats[i] = fb->color_attachments[i]->image.format;
+        color_attachment_formats[i] = fb->color_attachments[i]->format;
     }
 
     VkPipelineRenderingCreateInfoKHR rendering_create_info = {
@@ -976,8 +982,7 @@ void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const fra
         .viewMask                = 0,
         .colorAttachmentCount    = fb->color_attachment_count,
         .pColorAttachmentFormats = color_attachment_formats,
-        .depthAttachmentFormat =
-            fb->depth_attachment ? fb->depth_attachment->image.format : VK_FORMAT_UNDEFINED,
+        .depthAttachmentFormat = fb->depth_attachment ? fb->depth_attachment->format : VK_FORMAT_UNDEFINED,
         .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
     };
     info.pNext = &rendering_create_info;

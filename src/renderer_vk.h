@@ -61,6 +61,12 @@ typedef struct image_vk {
     VmaAllocation allocation;
 } image_vk;
 
+void image_create_view(const image_vk* image, VkImageAspectFlags aspect, VkImageView* view);
+void image_create_2d(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, image_vk* image);
+
+void image_update(size_t size, const void* data, image_vk* image);
+void image_destroy(image_vk* image);
+
 enum {
     K_SWAPCHAIN_MAX_IMAGES = 4,
 };
@@ -95,30 +101,18 @@ void buffer_destroy(buffer_vk* buffer);
 void vertex_buffer_create(size_t size, const void* data, vertex_buffer_vk* MX_NOT_NULL buffer);
 void index_buffer_create(size_t size, const void* data, index_buffer_vk* MX_NOT_NULL buffer);
 
-typedef struct texture_vk {
-    VmaAllocation allocation;
-    image_vk image;
-} texture_vk;
-
-void texture_create_view(const texture_vk* texture, VkImageAspectFlags aspect, VkImageView* view);
-void texture_create_2d(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                       texture_vk* texture);
-
-void texture_update(size_t size, const void* data, texture_vk* texture);
-void texture_destroy(texture_vk* texture);
-
 enum { MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4 };
 typedef struct framebuffer_vk {
-    texture_vk* color_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+    image_vk* color_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
     VkImageView color_attachment_views[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
     uint32_t color_attachment_count;
 
-    texture_vk* depth_attachment;
+    image_vk* depth_attachment;
     VkImageView depth_attachment_view;
 } framebuffer_vk;
 
-void framebuffer_create(uint32_t color_attachment_count, texture_vk* color_attachments,
-                        texture_vk* depth_attachment, framebuffer_vk* framebuffer);
+void framebuffer_create(uint32_t color_attachment_count, image_vk* color_attachments,
+                        image_vk* depth_attachment, framebuffer_vk* framebuffer);
 void framebuffer_destroy(framebuffer_vk* fb);
 
 enum { K_SHADER_MAX_DESCRIPTOR_SET = 4 };
@@ -188,6 +182,12 @@ typedef struct buffer_to_image_copy_vk {
     const buffer_vk* src;
     image_vk* dst;
 } buffer_to_image_copy_vk;
+
+typedef struct texture_vk {
+    image_vk image;
+    VkImageView view;
+    VkSampler sampler;
+} texture_vk;
 
 void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspectFlags aspect_flags,
                              VkImageLayout new);

@@ -37,9 +37,10 @@ int load_shader_from_path(const char* file_path, shader_vk* shader) {
     return MX_SUCCESS;
 }
 
-void load_texture2d_from_path(const char* path, texture_vk* texture) {
+void load_image_2d_from_path(const char* path, texture_vk* texture) {
     int width, height, channel_count;
 
+    //stbi_set_flip_vertically_on_load(1);
     stbi_uc* data = stbi_load(path, &width, &height, &channel_count, STBI_rgb_alpha);
 
     if(!data) {
@@ -52,9 +53,11 @@ void load_texture2d_from_path(const char* path, texture_vk* texture) {
     size_t size = width * height * 4;
 
     // stb loads images 1 byte per channel.
-    texture_create_2d(width, height, VK_FORMAT_R8G8B8A8_SRGB,
-                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, texture);
-    texture_update(size, data, texture);
+    image_create_2d(width, height,
+                    VK_FORMAT_R8G8B8A8_SRGB,
+                    VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                    &texture->image);
+    image_update(size, data, &texture->image);
     MX_LOG_SUCCESS("Texture at %s loaded!", path);
 
     stbi_image_free(data);

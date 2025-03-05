@@ -10,7 +10,7 @@
 #include "../../mgfx/src/renderer_vk.h"
 int load_shader_from_path(const char *file_path, shader_vk *shader);
 
-void load_texture2d_from_path(const char* path, texture_vk* texture);
+void load_image_2d_from_path(const char* path, texture_vk* texture);
 
 int mgfx_example_app();
 
