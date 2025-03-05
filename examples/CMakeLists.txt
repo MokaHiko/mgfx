@@ -18,18 +18,19 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cglm)
 
 add_library(ex_common ex_common.c)
-target_link_libraries(ex_common PUBLIC mgfx)
+target_link_libraries(ex_common PUBLIC cglm mgfx)
 target_link_libraries(ex_common PRIVATE glfw)
+target_include_directories(ex_common PRIVATE ./third_party/)
 target_include_directories(ex_common PUBLIC ./)
 
 add_executable(clear_screen clear_screen/clear_screen.c)
 target_link_libraries(clear_screen PRIVATE ex_common)
 
 add_executable(cubes cubes/cubes.c)
-target_link_libraries(cubes PRIVATE ex_common cglm)
+target_link_libraries(cubes PRIVATE ex_common)
 
 add_executable(gltf_loading gltf_loading/gltf_loading.c)
-target_link_libraries(gltf_loading PRIVATE ex_common cglm)
+target_link_libraries(gltf_loading PRIVATE ex_common)
 
 set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert.glsl
@@ -39,6 +40,9 @@ set(SHADERS
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.frag.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
 )
 
 find_program(GLSLANG_VALIDATOR glslangValidator)

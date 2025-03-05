@@ -12,5 +12,5 @@ typedef enum MGFX_SHADER_STAGE {
 
   MGFX_SHADER_STAGE_COUNT
 } MGFX_SHADER_STAGE;
- 
+
 #endif
