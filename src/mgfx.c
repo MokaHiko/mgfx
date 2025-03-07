@@ -165,7 +165,7 @@ static uint32_t s_frame_idx = 0;
 
 static VkDescriptorPool s_ds_pool;
 
-enum { MGFX_MAX_FRAME_BUFFER_COPIES = 16 };
+enum { MGFX_MAX_FRAME_BUFFER_COPIES = 128 };
 static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_buffer_copy_count = 0;
 
@@ -398,8 +398,6 @@ void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFla
         .size        = size,
         .usage       = buffer->usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        /*.queueFamilyIndexCount,*/
-        /*.pQueueFamilyIndices,*/
     };
 
     VmaAllocationCreateInfo alloc_info = {
@@ -407,12 +405,13 @@ void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFla
         .usage = VMA_MEMORY_USAGE_AUTO,
     };
 
-    VK_CHECK(vmaCreateBuffer(s_allocator, &info, &alloc_info, &buffer->handle, &buffer->allocation,
-                             NULL));
+    VK_CHECK(vmaCreateBuffer(s_allocator, &info, &alloc_info, &buffer->handle, &buffer->allocation, NULL));
 };
 
 void vertex_buffer_create(size_t size, const void* data, vertex_buffer_vk* buffer) {
     buffer_create(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, buffer);
+
+    // TODO: Create in init
     buffer_create(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                   VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, &s_vertex_staging_buffer);
 
@@ -425,6 +424,12 @@ void vertex_buffer_create(size_t size, const void* data, vertex_buffer_vk* buffe
         .srcOffset = 0,
         .dstOffset = 0,
         .size      = size,
+    };
+
+    // TODO: Recover
+    if(s_buffer_to_buffer_copy_count >= MGFX_MAX_FRAME_BUFFER_COPIES) {
+        MX_LOG_ERROR("Exceeded buffer copies this frame");
+        assert(0);
     };
 
     s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] = (buffer_to_buffer_copy_vk){
@@ -469,6 +474,16 @@ void index_buffer_create(size_t size, const void* data, index_buffer_vk* buffer)
     };
 };
 
+void uniform_buffer_create(size_t size, const void* data, uniform_buffer_vk* buffer) {
+    buffer_create(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                  VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, buffer);
+
+    void* mapped_data;
+    vmaMapMemory(s_allocator, buffer->allocation, &mapped_data);
+    memcpy(mapped_data, data, size);
+    vmaUnmapMemory(s_allocator, buffer->allocation);
+};
+
 void buffer_destroy(buffer_vk* buffer) {
     vmaDestroyBuffer(s_allocator, buffer->handle, buffer->allocation);
 }
@@ -506,7 +521,7 @@ void program_create_descriptor_sets(const program_vk* program,
                                     const VkDescriptorImageInfo* ds_image_infos,
                                     VkDescriptorSet* ds_sets) {
     VkWriteDescriptorSet ds_writes[K_SHADER_MAX_DESCRIPTOR_SET] = {};
-    uint32_t ds_write_count                                     = 0;
+    uint32_t ds_write_count = 0;
     for (int stage_index = 0; stage_index < MGFX_SHADER_STAGE_COUNT; stage_index++) {
         const shader_vk* shader = program->shaders[stage_index];
 
@@ -518,10 +533,8 @@ void program_create_descriptor_sets(const program_vk* program,
             if (ds_sets[ds_index] != VK_NULL_HANDLE) {
                 continue;
             }
-            ++ds_write_count;
 
             const descriptor_set_info_vk* ds = &shader->descriptor_sets[ds_index];
-
             VkDescriptorSetAllocateInfo alloc_info = {
                 .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                 .pNext              = NULL,
@@ -531,7 +544,7 @@ void program_create_descriptor_sets(const program_vk* program,
             VK_CHECK(vkAllocateDescriptorSets(s_device, &alloc_info, &ds_sets[ds_index]));
 
             for (int binding_index = 0; binding_index < ds->binding_count; binding_index++) {
-                ds_writes[ds_index] = (VkWriteDescriptorSet){
+                ds_writes[ds_write_count++] = (VkWriteDescriptorSet) {
                     .sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                     .pNext            = NULL,
                     .dstSet           = ds_sets[ds_index],
@@ -615,21 +628,21 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
         }
     }
 
-    uint32_t binding_count       = 0;
+    uint32_t binding_count = 0;
     shader->descriptor_set_count = module.descriptor_set_count;
     result = spvReflectEnumerateDescriptorBindings(&module, &binding_count, NULL);
     if (binding_count > 0) {
         assert(result == SPV_REFLECT_RESULT_SUCCESS);
-        SpvReflectDescriptorBinding* bindings =
-            mx_arena_push(&shader_arena, binding_count * sizeof(SpvReflectDescriptorBinding));
-        spvReflectEnumerateDescriptorBindings(&module, &binding_count, &bindings);
+        SpvReflectDescriptorBinding** bindings = mx_arena_push(&shader_arena,
+                                                              binding_count * sizeof(SpvReflectDescriptorBinding*));
+        spvReflectEnumerateDescriptorBindings(&module, &binding_count, bindings);
 
         for (uint32_t i = 0; i < binding_count; i++) {
-            descriptor_set_info_vk* ds = &shader->descriptor_sets[bindings[i].set];
+            descriptor_set_info_vk* ds = &shader->descriptor_sets[bindings[i]->set];
 
-            ds->bindings[bindings[i].binding] = (VkDescriptorSetLayoutBinding){
-                .binding            = bindings[i].binding,
-                .descriptorType     = (VkDescriptorType)bindings[i].descriptor_type,
+            ds->bindings[bindings[i]->binding] = (VkDescriptorSetLayoutBinding){
+                .binding            = bindings[i]->binding,
+                .descriptorType     = (VkDescriptorType)bindings[i]->descriptor_type,
                 .descriptorCount    = 1,
                 .stageFlags         = module.shader_stage,
                 .pImmutableSamplers = NULL,
@@ -763,7 +776,7 @@ void program_create_compute(const shader_vk* cs, program_vk* program) {
 }
 
 void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb, program_vk* program) {
-    program->shaders[MGFX_SHADER_STAGE_VERTEX]   = vs;
+    program->shaders[MGFX_SHADER_STAGE_VERTEX] = vs;
     program->shaders[MGFX_SHADER_STAGE_FRAGMENT] = fs;
 
     VkGraphicsPipelineCreateInfo info = {};

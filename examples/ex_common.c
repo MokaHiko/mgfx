@@ -15,6 +15,12 @@
 GLFWwindow* s_window = NULL;
 mx_bool s_keys[GLFW_KEY_LAST];
 
+double MGFX_TIME = 0.0f;
+double last_time = 0.0f;
+double MGFX_TIME_DELTA_TIME = 0.0;
+
+camera g_example_camera;
+
 mx_bool mgfx_get_key(int key_code) {
     return s_keys[key_code];
 }
@@ -79,48 +85,57 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     }
 }
 
-#include <cglm/cglm.h>
-
-typedef struct camera {
-    vec3 position;
-
-    vec3 forward;
-    vec3 right;
-    vec3 up;
-
-    mat4 view;
-    mat4 proj;
-    mat4 view_proj;
-} camera;
-
 void camera_create(camera* cam) {
-    *cam = (camera){
-        .position = {0.0f, 0.0f, 5.0f},
-        .forward  = {0.0f, 0.0f, 0.0f},
-        .up       = {0.0f, 1.0f, 0.0f},
-    };
+    *cam = (camera){.position = {0.0f, 0.0f, 5.0f},
+                    .forward  = {0.0f, 0.0f, -1.0f},
+                    .up       = {0.0f, 1.0f, 0.0f},
+                    .right    = {1.0f, 0.0f, 0.0f}};
 
-    glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1, 1000.0f, cam->proj);
+    glm_perspective(glm_rad(60.0), 16.0 / 9.0, 1000.0f, 0.1f, cam->proj);
+    cam->proj[1][1] *= -1;
 }
 
 void camera_update(camera* cam) {
-    glm_lookat(cam->position, cam->forward, cam->forward, cam->view);
+    vec3 look_at = GLM_VEC3_ZERO;
+    glm_vec3_add(cam->position, cam->forward, look_at);
+
+    glm_lookat(cam->position, look_at, cam->up, cam->view);
+    glm_mat4_inv(cam->view, cam->inverse_view);
     glm_mat4_mul(cam->proj, cam->view, cam->view_proj);
 
+    vec3 direction = GLM_VEC3_ZERO;
     if(mgfx_get_key(GLFW_KEY_W) == MX_TRUE) {
-        glm_vec3_add(cam->position, cam->forward, cam->position);
+        glm_vec3_add(direction, cam->forward, direction);
     }
 
     if(mgfx_get_key(GLFW_KEY_S) == MX_TRUE) {
-        glm_vec3_sub(cam->position, cam->forward, cam->position);
+        glm_vec3_sub(direction, cam->forward, direction);
     }
 
     if(mgfx_get_key(GLFW_KEY_D) == MX_TRUE) {
-        glm_vec3_add(cam->position, cam->right, cam->position);
+        glm_vec3_add(direction, cam->right, direction);
     }
-}
 
-static camera k_example_camera;
+    if(mgfx_get_key(GLFW_KEY_A) == MX_TRUE) {
+        glm_vec3_sub(direction, cam->right, direction);
+    }
+
+    if(mgfx_get_key(GLFW_KEY_SPACE) == MX_TRUE) {
+        glm_vec3_add(direction, cam->up, direction);
+    }
+
+    if(mgfx_get_key(GLFW_KEY_Q) == MX_TRUE) {
+        glm_vec3_sub(direction, cam->up, direction);
+    }
+
+    double ms = 5.0f;
+    if(!glm_vec3_eqv(direction, GLM_VEC3_ZERO)) {
+        glm_vec3_norm(direction);
+    }
+
+    glm_vec3_scale(direction, ms * MGFX_TIME_DELTA_TIME, direction);
+    glm_vec3_add(cam->position, direction, cam->position);
+}
 
 int mgfx_example_app() {
     if (glfwInit() != GLFW_TRUE) {
@@ -140,10 +155,16 @@ int mgfx_example_app() {
         return -1;
     }
 
+    camera_create(&g_example_camera);
+
     mgfx_example_init();
 
     while (!glfwWindowShouldClose(s_window)) {
-        camera_update(&k_example_camera);
+        MGFX_TIME = glfwGetTime();
+        MGFX_TIME_DELTA_TIME = MGFX_TIME - last_time;
+        last_time = MGFX_TIME;
+
+        camera_update(&g_example_camera);
         // mgfx_example_update();
 
         mgfx_frame();

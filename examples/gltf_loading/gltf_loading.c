@@ -3,9 +3,6 @@
 #include <mx/mx_memory.h>
 #include <mx/mx_file.h>
 
-#define CGLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <cglm/cglm.h>
-
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -64,8 +61,16 @@ void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, 
 void vertex_layout_end(mgfx_vertex_layout* vl) {}
 
 typedef struct mgfx_material {
-    const texture_vk* diffuse_texture;
-    const texture_vk* speucular_texture;
+    struct properties {
+        vec3 albedo;
+        float metallic;
+        float roughness;
+        float ao;
+    } properties;
+    buffer_vk properties_buffer;
+
+    const texture_vk* albedo_texture;
+    const texture_vk* metallic_roughness_texture;
 
     VkDescriptorSet ds;
 } mgfx_material;
@@ -89,7 +94,7 @@ typedef struct mgfx_node {
     uint32_t primitive_count;
 } mgfx_node;
 
-enum { MGFX_SCENE_MAX_NODES = 32};
+enum { MGFX_SCENE_MAX_NODES = 128};
 enum { MGFX_SCENE_MAX_TEXTURES = 32};
 typedef struct mgfx_scene {
     mgfx_node nodes[MGFX_SCENE_MAX_NODES];
@@ -105,7 +110,7 @@ typedef struct mgfx_scene {
     mx_arena allocator;
 } mgfx_scene;
 
-void gltf_process_node(const float* mtx, const cgltf_data* gltf, mgfx_scene* scene, cgltf_node* node) {
+void gltf_process_node(const cgltf_data* gltf, mgfx_scene* scene, cgltf_node* node) {
     if (!node) {
         return;
     }
@@ -150,17 +155,6 @@ void gltf_process_node(const float* mtx, const cgltf_data* gltf, mgfx_scene* sce
                                                attribute->data->offset;
 
                 const uint32_t attribute_offset = scene->vl->attribute_offsets[attribute->type];
-
-                if(attribute->type == cgltf_attribute_type_texcoord) {
-                    MX_LOG_INFO("texcoords count: %d", attribute->data->count);
-                    MX_LOG_INFO("component_type: %d", attribute->data->component_type);
-                    MX_LOG_INFO("type: %d", attribute->data->type);
-                    for (size_t i = 0; i < 5; i++) {
-                        //const float* coords = (float*)(attrib_buffer + (i * attribute->data->stride));
-                        const float* coords = (float*)(attrib_buffer + (i * sizeof(float) * 2));
-                        MX_LOG_INFO("texcoords: %.4f %.4f", coords[0], coords[1]);
-                    }
-                }
 
                 for (size_t i = 0; i < attribute->data->count; i++) {
                     memcpy((uint8_t*)scene_primitive->vertrices +
@@ -225,7 +219,7 @@ void gltf_process_node(const float* mtx, const cgltf_data* gltf, mgfx_scene* sce
     }
 
     for (size_t child_idx = 0; child_idx < node->children_count; child_idx++) {
-        gltf_process_node(NULL, gltf, scene, node->children[child_idx]);
+        gltf_process_node(gltf, scene, node->children[child_idx]);
     }
 };
 
@@ -277,8 +271,30 @@ void load_scene_from_path(const char* path, mgfx_scene* scene) {
 
         // PBR
         if(mat->has_pbr_metallic_roughness) {
-            size_t tex_idx = mat->pbr_metallic_roughness.base_color_texture.texture - data->textures;
-            scene->materials[i].diffuse_texture = &scene->textures[tex_idx];
+            memcpy(&scene->materials[i].properties.albedo, &mat->pbr_metallic_roughness.base_color_factor, sizeof(vec3));
+            if(mat->pbr_metallic_roughness.base_color_texture.texture) {
+                size_t tex_idx = mat->pbr_metallic_roughness.base_color_texture.texture - data->textures;
+                scene->materials[i].albedo_texture = &scene->textures[tex_idx];
+            }
+
+            scene->materials[i].properties.metallic = mat->pbr_metallic_roughness.metallic_factor;
+            scene->materials[i].properties.roughness = mat->pbr_metallic_roughness.roughness_factor;
+            if(mat->pbr_metallic_roughness.metallic_roughness_texture.texture) {
+                size_t tex_idx = mat->pbr_metallic_roughness.metallic_roughness_texture.texture - data->textures;
+                scene->materials[i].metallic_roughness_texture= &scene->textures[tex_idx];
+            }
+
+            scene->materials[i].properties.ao = 1.0f;
+
+            if(mat->normal_texture.texture) {
+            }
+
+            if(mat->occlusion_texture.texture) {
+            }
+
+            if(mat->emissive_texture.texture) {
+            }
+
             continue;
         }
 
@@ -290,27 +306,38 @@ void load_scene_from_path(const char* path, mgfx_scene* scene) {
         buffers_size += data->buffers[i].size;
     }
 
-    scene->allocator = mx_arena_alloc((size_t)(buffers_size * 1.75));
+    // TODO: Estimate properly
+    size_t scene_allocator_size = (size_t)(buffers_size * 1.75);
+    scene->allocator = mx_arena_alloc(scene_allocator_size);
 
-    mat4 identity;
-    glm_mat4_identity(identity);
-    gltf_process_node((float *)identity, data, scene, data->nodes);
+    gltf_process_node(data, scene, data->nodes);
 
     cgltf_free(data);
 };
 
-void destroy_scene(mgfx_scene* scene) {
+void scene_destroy(mgfx_scene* scene) {
     for(uint32_t i = 0; i < scene->texture_count; i++) {
         // image_destroy(&scene->textures[i]);
     }
 
     for(uint32_t i = 0; i < scene->material_count ; i++) {
+        // Destroy property_buffer
         // Destroy ds
     }
 
     for(uint32_t i = 0; i < scene->node_count; i++) {
         /*buffer_destroy(&scene->nodes[i].vb);*/
         /*buffer_destroy(&scene->nodes[i].ib);*/
+    }
+}
+
+void log_mat4(const mat4* mat) {
+    for(int col = 0; col < 4; col++) {
+        MX_LOG_INFO("%.2f %.2f %.2f %.2f",
+                    *mat[col][0],
+                    *mat[col][1],
+                    *mat[col][2],
+                    *mat[col][3]);
     }
 }
 
@@ -363,10 +390,23 @@ void mgfx_example_init() {
     LOAD_GLTF_MODEL("Lantern", &gltf);
     /*LOAD_GLTF_MODEL("Cube", &gltf);*/
     /*LOAD_GLTF_MODEL("DamagedHelmet", &gltf);*/
+    /*LOAD_GLTF_MODEL("MetalRoughSpheresNoTextures", &gltf);*/
+    /*LOAD_GLTF_MODEL("MetalRoughSpheres", &gltf);*/
     /*LOAD_GLTF_MODEL("BoxTextured", &gltf);*/
 
     for(int i = 0; i < gltf.material_count; i++) {
-        if(gltf.materials[i].diffuse_texture) {
+        // TODO: Global materials buffer
+        uniform_buffer_create(sizeof(gltf.materials[i].properties),
+                              &gltf.materials[i].properties,
+                              &gltf.materials[i].properties_buffer);
+
+        VkDescriptorBufferInfo material_properties_buffer_info = {
+            .buffer = gltf.materials[i].properties_buffer.handle,
+            .offset = 0,
+            .range = sizeof(gltf.materials[i].properties_buffer),
+        };
+
+        if(gltf.materials[i].albedo_texture) {
         }
 
         VkDescriptorImageInfo diffuse_image_desc_info = {
@@ -376,14 +416,14 @@ void mgfx_example_init() {
         };
 
         program_create_descriptor_sets(&gfx_program,
-                                       NULL,
+                                       &material_properties_buffer_info,
                                        &diffuse_image_desc_info,
                                        &gltf.materials[i].ds);
     }
 }
 
 void mgfx_example_updates(const DrawCtx* ctx) {
-    VkClearColorValue clear = {.float32 = {0.0f, 1.0f, 0.0f, 1.0f}};
+    VkClearColorValue clear = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
     vk_cmd_transition_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -392,19 +432,19 @@ void mgfx_example_updates(const DrawCtx* ctx) {
 
     vk_cmd_transition_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
-    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_program.pipeline);
-
-    static struct ComputePC {
-        float time;
-    } pc;
-    pc.time += 0.001;
-    vkCmdPushConstants(ctx->cmd, compute_program.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-
-    vkCmdBindDescriptorSets(ctx->cmd, 
-                            VK_PIPELINE_BIND_POINT_COMPUTE,
-                            compute_program.layout, 0, 1, &compute_ds_set, 0, NULL);
-
-    vkCmdDispatch(ctx->cmd, (int)width / 16, (int)height / 16, 1);
+    /*vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_COMPUTE, compute_program.pipeline);*/
+    /**/
+    /*static struct ComputePC {*/
+    /*    float time;*/
+    /*} pc;*/
+    /*pc.time += 0.001;*/
+    /*vkCmdPushConstants(ctx->cmd, compute_program.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);*/
+    /**/
+    /*vkCmdBindDescriptorSets(ctx->cmd, */
+    /*                        VK_PIPELINE_BIND_POINT_COMPUTE,*/
+    /*                        compute_program.layout, 0, 1, &compute_ds_set, 0, NULL);*/
+    /**/
+    /*vkCmdDispatch(ctx->cmd, (int)width / 16, (int)height / 16, 1);*/
 
     vk_cmd_begin_rendering(ctx->cmd, &mesh_pass_fb);
 
@@ -414,17 +454,13 @@ void mgfx_example_updates(const DrawCtx* ctx) {
         mat4 model;
         mat4 view;
         mat4 proj;
+
+        mat4 inverse_view;
     } graphics_pc;
 
-    glm_perspective(glm_rad(60.0), 16.0 / 9.0, 1000.0f, 0.1f, graphics_pc.proj);
-    graphics_pc.proj[1][1] *= -1;
-
-    {
-        vec3 position = {0.0f, 0.0f, 5.0f};
-        vec3 forward  = {0.0f, 0.0f, 0.0f};
-        vec3 up       = {0.0f, 1.0f, 0.0f};
-        glm_lookat(position, forward, up, graphics_pc.view);
-    }
+    glm_mat4_copy(g_example_camera.view, graphics_pc.view);
+    glm_mat4_copy(g_example_camera.proj, graphics_pc.proj);
+    glm_mat4_copy(g_example_camera.inverse_view, graphics_pc.inverse_view);
 
     VkDeviceSize offsets = 0;
     vkCmdBindVertexBuffers(ctx->cmd, 0, 1, &vertex_buffer.handle, &offsets);
@@ -435,13 +471,18 @@ void mgfx_example_updates(const DrawCtx* ctx) {
         glm_mat4_identity(graphics_pc.model);
         glm_mat4_mul(gltf.nodes[i].matrix, graphics_pc.model, graphics_pc.model);
 
-        static vec3 position = {0.0f, 0.0f, -50.0f};
+        vec3 position = {0.0f, 0.0f, 0.0f};
         glm_translate(graphics_pc.model, position);
 
-        vec3 axis = {1.0, 1.0, 1.0};
-        glm_rotate(graphics_pc.model, pc.time * 3.141593, axis);
+        vec3 axis = {0.0, 1.0, 0.0};
+        glm_rotate(graphics_pc.model, MGFX_TIME * 3.141593 / 5.0, axis);
+
+        vec3 uniform_scale = {1.0, 1.0, 1.0};
+        glm_vec3_scale(uniform_scale, 1.0, uniform_scale);
+        glm_scale(graphics_pc.model, uniform_scale);
 
         vkCmdPushConstants(ctx->cmd, gfx_program.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(graphics_pc), &graphics_pc);
+
         for(uint32_t p = 0; p < gltf.nodes[i].primitive_count; p++) {
             const struct primitive* primitive = &gltf.nodes[i].primitives[p];
             vkCmdBindDescriptorSets(ctx->cmd,
@@ -453,9 +494,18 @@ void mgfx_example_updates(const DrawCtx* ctx) {
 
     vk_cmd_end_rendering(ctx->cmd);
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    vk_cmd_transition_image(ctx->cmd, ctx->frame_target, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    vk_cmd_copy_image_to_image(ctx->cmd, &color_attachment, VK_IMAGE_ASPECT_COLOR_BIT, ctx->frame_target);
+    vk_cmd_transition_image(ctx->cmd, &color_attachment,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+    vk_cmd_transition_image(ctx->cmd, ctx->frame_target,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+    vk_cmd_copy_image_to_image(ctx->cmd,
+                               &color_attachment,
+                               VK_IMAGE_ASPECT_COLOR_BIT,
+                               ctx->frame_target);
 }
 
 void mgfx_example_shutdown() {

@@ -93,6 +93,7 @@ typedef struct buffer_vk {
 
 typedef buffer_vk vertex_buffer_vk;
 typedef buffer_vk index_buffer_vk;
+typedef buffer_vk uniform_buffer_vk;
 
 void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags,
                    buffer_vk* buffer);
@@ -100,6 +101,8 @@ void buffer_destroy(buffer_vk* buffer);
 
 void vertex_buffer_create(size_t size, const void* data, vertex_buffer_vk* MX_NOT_NULL buffer);
 void index_buffer_create(size_t size, const void* data, index_buffer_vk* MX_NOT_NULL buffer);
+
+void uniform_buffer_create(size_t size, const void* data, uniform_buffer_vk* buffer);
 
 enum { MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4 };
 typedef struct framebuffer_vk {
