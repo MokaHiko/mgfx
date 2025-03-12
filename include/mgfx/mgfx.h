@@ -1,6 +1,7 @@
 #ifndef MGFX_H_
 #define MGFX_H_
 
+#include "defines.h"
 #include <mx/mx.h>
 
 typedef MX_API struct {
@@ -26,9 +27,17 @@ static const uint16_t mgfx_invalid_handle = UINT16_MAX;
 
 #define MGFX_HANDLE(name)                       \
   typedef MX_API struct name {                  \
-    uint16_t idx;				\
+    uint64_t idx;				\
   } name;                                       \
 
-MGFX_HANDLE(mgfx_vbh)
+MGFX_HANDLE(vertex_buffer_handle)
+MGFX_HANDLE(mgfx_program_handle)
+MGFX_HANDLE(mgfx_descriptor_handle)
+
+void vertex_layout_begin(mgfx_vertex_layout* vl);
+
+void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size);
+
+void vertex_layout_end(mgfx_vertex_layout* vl);
 
 #endif

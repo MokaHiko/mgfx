@@ -1,11 +1,14 @@
 #include <ex_common.h>
-#include "gltf_loader.h"
+#include <gltf_loading/gltf_loader.h>
 
 #include <mx/mx_log.h>
 #include <GLFW/glfw3.h>
 
 #include <mx/mx_memory.h>
 #include <mx/mx_file.h>
+
+#include <string.h>
+#include <vulkan/vulkan_core.h>
 
 // Frame buffer
 image_vk color_attachment;
@@ -16,41 +19,78 @@ shader_vk vertex_shader;
 shader_vk fragment_shader;
 program_vk gfx_program;
 
-mgfx_scene gltf;
+shader_vk skybox_vertex_shader;
+shader_vk skybox_fragment_shader;
+program_vk skybox_program;
+
+texture_vk skybox_cube_map;
+mgfx_scene skybox_scene;
+
+descriptor_vk skybox_cube_map_descriptor;
+VkDescriptorSet skybox_cube_map_ds;
+
+mgfx_scene cube_scene;
+mgfx_scene lantern_scene;
 
 void mgfx_example_init() {
     image_create(APP_WIDTH, APP_HEIGHT, VK_FORMAT_R16G16B16A16_SFLOAT, 1,
-                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
-                 0, &color_attachment);
+                    VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, 0,
+                    &color_attachment);
 
     image_create(APP_WIDTH, APP_HEIGHT, VK_FORMAT_D32_SFLOAT, 1,
                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0, &depth_attachment);
     framebuffer_create(1, &color_attachment, &depth_attachment, &mesh_pass_fb);
 
+    // Load cube map
+    load_shader_from_path("assets/shaders/skybox.vert.glsl.spv", &skybox_vertex_shader);
+    load_shader_from_path("assets/shaders/skybox.frag.glsl.spv", &skybox_fragment_shader);
+
+    program_create_graphics(&skybox_vertex_shader,
+                            &skybox_fragment_shader,
+                            &mesh_pass_fb,
+                            &skybox_program);
+
+    image_create(1080, 1080, VK_FORMAT_R8G8B8A8_UNORM, 6, VK_IMAGE_USAGE_SAMPLED_BIT,
+                 VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, &skybox_cube_map.image);
+    image_create_view(&skybox_cube_map.image,
+                      VK_IMAGE_VIEW_TYPE_CUBE,
+                      VK_IMAGE_ASPECT_COLOR_BIT,
+                      &skybox_cube_map.view);
+
+    program_create_descriptor_set(&skybox_program, &skybox_cube_map_ds);
+    descriptor_image_create(&skybox_cube_map.view, &skybox_cube_map_descriptor);
+
+    mgfx_vertex_layout skybox_vl;
+    vertex_layout_begin(&skybox_vl);
+        vertex_layout_add(&skybox_vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
+    vertex_layout_end(&skybox_vl);
+    skybox_scene.vl = &skybox_vl;
+
+    LOAD_GLTF_MODEL("Cube", &skybox_program, gltf_loader_flag_meshes, &skybox_scene);
+
+    // Laod scenes
     load_shader_from_path("assets/shaders/lit.vert.glsl.spv", &vertex_shader);
     load_shader_from_path("assets/shaders/lit.frag.glsl.spv", &fragment_shader);
 
-    program_create_graphics(&vertex_shader, &fragment_shader, &mesh_pass_fb, &gfx_program);
+    program_create_graphics(&vertex_shader,
+                            &fragment_shader,
+                            &mesh_pass_fb,
+                            &gfx_program);
 
-    mgfx_vertex_layout vl;
+    mgfx_vertex_layout pbr_vl;
+    vertex_layout_begin(&pbr_vl);
+        vertex_layout_add(&pbr_vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
+        vertex_layout_add(&pbr_vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
+        vertex_layout_add(&pbr_vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD, sizeof(float) * 2);
+        vertex_layout_add(&pbr_vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
+        vertex_layout_add(&pbr_vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
+    vertex_layout_end(&pbr_vl);
 
-    vertex_layout_begin(&vl);
-        vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
-        vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
-        vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD, sizeof(float) * 2);
-        vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
-        vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
-    vertex_layout_end(&vl);
+    lantern_scene.vl = &pbr_vl;
+    LOAD_GLTF_MODEL("Lantern", &gfx_program, gltf_loader_flag_all, &lantern_scene);
 
-    gltf.vl = &vl;
-
-    /*LOAD_GLTF_MODEL("Lantern", &gltf);*/
-    LOAD_GLTF_MODEL("DamagedHelmet", &gfx_program, gltf_loader_flag_all, &gltf);
-    /*LOAD_GLTF_MODEL("Sponza", &gltf);*/
-    /*LOAD_GLTF_MODEL("conan_1", &gltf);*/
-    //LOAD_GLTF_MODEL("MetalRoughSpheresNoTextures", &gltf);
-    /*LOAD_GLTF_MODEL("MetalRoughSpheres", &gltf);*/
+    /*LOAD_GLTF_MODEL("DamagedHelmet", &gfx_program, &gltf);*/
 }
 
 void mgfx_example_updates(const DrawCtx* ctx) {
@@ -65,9 +105,6 @@ void mgfx_example_updates(const DrawCtx* ctx) {
                             VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
     vk_cmd_begin_rendering(ctx->cmd, &mesh_pass_fb);
-
-    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gfx_program.pipeline);
-
     static struct graphics_pc {
         mat4 model;
         mat4 view;
@@ -79,16 +116,33 @@ void mgfx_example_updates(const DrawCtx* ctx) {
     glm_mat4_copy(g_example_camera.proj, graphics_pc.proj);
     glm_mat4_copy(g_example_camera.inverse_view, graphics_pc.view_inv);
 
+    // Draw skybox
+    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox_program.pipeline);
+
+    VkDeviceSize offsets = 0;
+
+    const struct primitive* cube = &skybox_scene.meshes[0].primitives[0];
+    vkCmdBindVertexBuffers(ctx->cmd, 0, 1, &cube->vb.handle, &offsets);
+    vkCmdBindIndexBuffer(ctx->cmd, cube->ib.handle, 0, VK_INDEX_TYPE_UINT32);
+
+    vkCmdBindDescriptorSets(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            skybox_program.layout, 0, 1, &skybox_cube_map_ds, 0, NULL);
+
+    vkCmdPushConstants(ctx->cmd, gfx_program.layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(graphics_pc), &graphics_pc);
+    vkCmdDrawIndexed(ctx->cmd, cube->index_count, 1, 0, 0, 0);
+
     // Draw scene
-    for(uint32_t n = 0; n < gltf.node_count; n++) {
-        if(gltf.nodes[n].mesh == NULL) {
+    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gfx_program.pipeline);
+    for(uint32_t n = 0; n < lantern_scene.node_count; n++) {
+        if(lantern_scene.nodes[n].mesh == NULL) {
             continue;
         }
 
-        assert(gltf.nodes[n].mesh->primitive_count > 0);
+        assert(lantern_scene.nodes[n].mesh->primitive_count > 0);
 
         glm_mat4_identity(graphics_pc.model);
-        glm_mat4_mul(gltf.nodes[n].matrix, graphics_pc.model, graphics_pc.model);
+        glm_mat4_mul(lantern_scene.nodes[n].matrix, graphics_pc.model, graphics_pc.model);
 
         vec3 position = {0.0f, 0.0f, 0.0f};
         glm_translate(graphics_pc.model, position);
@@ -115,8 +169,8 @@ void mgfx_example_updates(const DrawCtx* ctx) {
         glm_vec3_scale(uniform_scale, 1.0, uniform_scale);
         glm_scale(graphics_pc.model, uniform_scale);
 
-        for(uint32_t p = 0; p < gltf.nodes[n].mesh->primitive_count; p++) {
-            const struct primitive* node_primitive = &gltf.nodes[n].mesh->primitives[p];
+        for(uint32_t p = 0; p < lantern_scene.nodes[n].mesh->primitive_count; p++) {
+            const struct primitive* node_primitive = &lantern_scene.nodes[n].mesh->primitives[p];
 
             if(node_primitive->index_count <= 0) {
                 continue;
@@ -154,9 +208,16 @@ void mgfx_example_shutdown() {
     image_destroy(&depth_attachment);
     image_destroy(&color_attachment);
 
-    scene_destroy(&gltf);
+    scene_destroy(&lantern_scene);
 
     framebuffer_destroy(&mesh_pass_fb);
+
+    scene_destroy(&skybox_scene);
+    texture_destroy(&skybox_cube_map);
+
+    shader_destroy(&skybox_vertex_shader);
+    shader_destroy(&skybox_fragment_shader);
+    program_destroy(&skybox_program);
 
     program_destroy(&gfx_program);
     shader_destroy(&fragment_shader);

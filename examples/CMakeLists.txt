@@ -17,11 +17,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cglm)
 
-add_library(ex_common ex_common.c)
-target_link_libraries(ex_common PUBLIC cglm mgfx)
-target_link_libraries(ex_common PRIVATE glfw)
+message(STATUS "Downloading glTF Sample Models...")
+FetchContent_Declare(
+    glTF_Sample_Models
+    GIT_REPOSITORY "https://github.com/KhronosGroup/glTF-Sample-Models.git"
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(glTF_Sample_Models)
+
+add_library(ex_common ex_common.c third_party/mikktspace/mikktspace.c)
+target_link_libraries(ex_common PUBLIC cglm mgfx glfw)
 target_include_directories(ex_common PRIVATE ./third_party/)
 target_include_directories(ex_common PUBLIC ./)
+target_compile_definitions(ex_common PUBLIC GLTF_MODELS_PATH="${CMAKE_BINARY_DIR}/_deps/gltf_sample_models-src/2.0/")
 
 add_executable(clear_screen clear_screen/clear_screen.c)
 target_link_libraries(clear_screen PRIVATE ex_common)
@@ -29,13 +37,16 @@ target_link_libraries(clear_screen PRIVATE ex_common)
 add_executable(cubes cubes/cubes.c)
 target_link_libraries(cubes PRIVATE ex_common)
 
+add_library(gltf_loader gltf_loading/gltf_loader.c)
+target_link_libraries(gltf_loader PRIVATE ex_common)
+
 add_executable(gltf_loading gltf_loading/gltf_loading.c)
-target_link_libraries(gltf_loading PRIVATE ex_common)
+target_link_libraries(gltf_loading PRIVATE ex_common gltf_loader)
+
+add_executable(shadows shadows/shadows.c)
+target_link_libraries(shadows PRIVATE ex_common gltf_loader)
 
 set(SHADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.vert.glsl
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/triangle.frag.glsl
-
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.vert.glsl
@@ -43,6 +54,9 @@ set(SHADERS
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.frag.glsl
 )
 
 find_program(GLSLANG_VALIDATOR glslangValidator)

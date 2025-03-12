@@ -12,7 +12,7 @@ void mgfx_example_updates(const DrawCtx *ctx) {
     VkClearColorValue clear = { .float32 = {sin(0.6 * time), sin(0.5f * time), sin(time * 0.2f), 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    vk_cmd_clear_image(ctx->cmd, ctx->frame_target, &range, &clear);
+    vk_cmd_clear_image(ctx->cmd, ctx->frame_target->color_attachments[0], &range, &clear);
 }
 
 void mgfx_example_shutdown() {}

@@ -7,6 +7,7 @@
 
 #include <vma/vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include "mgfx/defines.h"
 
@@ -52,20 +53,57 @@ typedef struct frame_vk {
 } frame_vk;
 
 typedef struct image_vk {
-    VkImage handle;
-    VkFormat format;
-
-    VkImageLayout layout;
     VkExtent3D extent;
+    VkFormat format;
+    VkImageLayout layout;
 
+    uint32_t layer_count;
+
+    VkImage handle;
     VmaAllocation allocation;
 } image_vk;
 
-void image_create_view(const image_vk* image, VkImageAspectFlags aspect, VkImageView* view);
-void image_create_2d(uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, image_vk* image);
+void image_create(uint32_t width,
+                  uint32_t height,
+                  VkFormat format,
+                  uint32_t array_layers,
+                  VkImageUsageFlags usage,
+                  VkImageCreateFlags flags,
+                  image_vk* image);
+void image_create_view(const image_vk* image,
+                       VkImageViewType type,
+                       VkImageAspectFlags aspect,
+                       VkImageView* view);
 
 void image_update(size_t size, const void* data, image_vk* image);
 void image_destroy(image_vk* image);
+
+typedef struct texture_vk {
+    image_vk image;
+    VkImageView view;
+    VkSampler sampler;
+} texture_vk;
+
+void texture_create(uint32_t width,
+                    uint32_t height,
+                    VkFormat format,
+                    VkFilter filter,
+                    texture_vk* texture);
+void texture_destroy(texture_vk* texture);
+
+enum { MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4 };
+typedef struct framebuffer_vk {
+    image_vk* color_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+    VkImageView color_attachment_views[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+    uint32_t color_attachment_count;
+
+    image_vk* depth_attachment;
+    VkImageView depth_attachment_view;
+} framebuffer_vk;
+
+void framebuffer_create(uint32_t color_attachment_count, image_vk* color_attachments,
+                        image_vk* depth_attachment, framebuffer_vk* framebuffer);
+void framebuffer_destroy(framebuffer_vk* fb);
 
 enum {
     K_SWAPCHAIN_MAX_IMAGES = 4,
@@ -78,6 +116,11 @@ typedef struct swapchain_vk {
 
     VkExtent2D extent;
     VkSwapchainKHR handle;
+
+    framebuffer_vk framebuffer;
+
+    uint32_t free_idx;
+    mx_bool resize;
 } swapchain_vk;
 
 int swapchain_create(VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain,
@@ -97,6 +140,7 @@ typedef buffer_vk uniform_buffer_vk;
 
 void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFlags flags,
                    buffer_vk* buffer);
+void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const void* data);
 void buffer_destroy(buffer_vk* buffer);
 
 void vertex_buffer_create(size_t size, const void* data, vertex_buffer_vk* MX_NOT_NULL buffer);
@@ -104,19 +148,19 @@ void index_buffer_create(size_t size, const void* data, index_buffer_vk* MX_NOT_
 
 void uniform_buffer_create(size_t size, const void* data, uniform_buffer_vk* buffer);
 
-enum { MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4 };
-typedef struct framebuffer_vk {
-    image_vk* color_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
-    VkImageView color_attachment_views[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
-    uint32_t color_attachment_count;
+typedef struct buffer_pool_vk {
+    buffer_vk buffer;
+    uint32_t head;
+} buffer_pool_vk;
 
-    image_vk* depth_attachment;
-    VkImageView depth_attachment_view;
-} framebuffer_vk;
+typedef struct buffer_slice_vk {
+    buffer_pool_vk* buffer_pool;
+    size_t offset;
+    size_t size;
+} buffer_slice_vk;
 
-void framebuffer_create(uint32_t color_attachment_count, image_vk* color_attachments,
-                        image_vk* depth_attachment, framebuffer_vk* framebuffer);
-void framebuffer_destroy(framebuffer_vk* fb);
+void buffer_slice_allocate(buffer_pool_vk* pool, size_t size, buffer_slice_vk* slice);
+void buffer_slice_update(buffer_slice_vk* slice, size_t size, const void* data);
 
 enum { K_SHADER_MAX_DESCRIPTOR_SET = 4 };
 enum { K_SHADER_MAX_DESCRIPTOR_BINDING = 8 };
@@ -148,25 +192,42 @@ typedef struct shader_vk {
 void shader_create(size_t length, const char* code, shader_vk* shader);
 void shader_destroy(shader_vk* shader);
 
+typedef struct descriptor_vk {
+    union {
+        VkDescriptorImageInfo image_info;
+        VkDescriptorBufferInfo buffer_info;
+    };
+
+    VkDescriptorType type;
+} descriptor_vk;
+
+void descriptor_buffer_create(const buffer_vk* buffer, descriptor_vk* descriptor);
+void descriptor_image_create(const VkImageView* image_view, descriptor_vk* descriptor);
+void descriptor_texture_create(const texture_vk* texture, descriptor_vk* descriptor);
+
+void descriptor_write(VkDescriptorSet set, uint32_t binding, const descriptor_vk* descriptor);
+
 typedef struct program_vk {
     const shader_vk* shaders[MGFX_SHADER_STAGE_COUNT];
-    VkDescriptorSetLayout ds_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
+
+    VkDescriptorSetLayout descriptor_set_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
+    uint32_t descriptor_set_count;
 
     VkPipelineLayout layout;
     VkPipeline pipeline;
 } program_vk;
 
 void program_create_compute(const shader_vk* cs, program_vk* program);
-void program_create_graphics(const shader_vk* vs, const shader_vk* fs, const framebuffer_vk* fb,
+void program_create_graphics(const shader_vk* vs,
+                             const shader_vk* fs,
+                             const framebuffer_vk* fb,
                              program_vk* program);
-
-// TODO: Descriptors.
-void create_sampler(VkFilter filter, VkSampler* sampler);
 
 void program_create_descriptor_sets(const program_vk* program,
                                     const VkDescriptorBufferInfo* ds_buffer_infos,
                                     const VkDescriptorImageInfo* ds_image_infos,
                                     VkDescriptorSet* ds_sets);
+void program_create_descriptor_set(const program_vk* program, VkDescriptorSet* ds);
 void program_destroy(program_vk* program);
 
 // TODO: Remove.
@@ -186,12 +247,6 @@ typedef struct buffer_to_image_copy_vk {
     image_vk* dst;
 } buffer_to_image_copy_vk;
 
-typedef struct texture_vk {
-    image_vk image;
-    VkImageView view;
-    VkSampler sampler;
-} texture_vk;
-
 void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspectFlags aspect_flags,
                              VkImageLayout new);
 
@@ -207,7 +262,7 @@ void vk_cmd_end_rendering(VkCommandBuffer cmd);
 // TODO: Change to encoder
 typedef struct DrawCtx {
     VkCommandBuffer cmd;
-    image_vk* frame_target;
+    framebuffer_vk* frame_target;
 } DrawCtx;
 
 extern void mgfx_example_updates(const DrawCtx* frame);

@@ -692,12 +692,12 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
         .pNext     = NULL,
         .imageView = fb->depth_attachment_view,
         .imageLayout = fb->depth_attachment ? fb->depth_attachment->layout : VK_IMAGE_LAYOUT_UNDEFINED,
-        .resolveMode        = VK_RESOLVE_MODE_NONE,
-        .resolveImageView   = VK_NULL_HANDLE,
+        .resolveMode = VK_RESOLVE_MODE_NONE,
+        .resolveImageView = VK_NULL_HANDLE,
         .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .loadOp             = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp            = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue         = { .depthStencil = {0.0f, 0} }
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = { .depthStencil = {.depth = 1.0f, .stencil = 0} }
     };
 
     VkRenderingInfo rendering_info = {
@@ -719,8 +719,8 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
         .x = 0, .y = 0,
         .width    = width,
         .height   = height,
-        .minDepth = 1.0f,
-        .maxDepth = 0.0f,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
     };
 
     vkCmdSetViewport(cmd, 0, 1, &view_port);

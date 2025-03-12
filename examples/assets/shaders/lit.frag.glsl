@@ -6,6 +6,7 @@ layout(location = 2) in vec3 v_color;
 
 layout(location = 3) in vec3 world_position;
 layout(location = 4) in flat vec3 cam_position;
+layout(location = 5) in mat3 TBN;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -17,11 +18,28 @@ struct point_light {
     float intensity;
 };
 
-const int NUM_LIGHTS = 3;
-point_light point_lights[NUM_LIGHTS] = point_light[](
-    point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0) * 255.0, 5.0),
-    point_light(vec3(-10.0, 10.0, 4.0), vec3(1.0, 0.0, 0.0) * 255.0, 10.0),
-    point_light(vec3(0.0, -10.0, 5.0), vec3(0.0, 1.0, 0.0) * 255.0, 20.0)
+struct directional_light  {
+    vec3 direction;
+    vec3 color;
+};
+
+const int POINT_LIGHT_COUNT = 0;
+point_light point_lights[] = point_light[](
+    // HDR.
+    // point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0) * 255.0, 5.0),
+    // point_light(vec3(-10.0, 10.0, 4.0), vec3(0.7, 0.3, 0.3) * 255.0, 10.0),
+    // point_light(vec3(0.0, -10.0, 5.0), vec3(160.0, 32.0, 240.0), 5.0)
+
+    point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
+    point_light(vec3(-5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
+    point_light(vec3(0.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0)
+    // point_light(vec3(-10.0, 10.0, 4.0), vec3(0.7, 0.3, 0.3), 10.0),
+    // point_light(vec3(0.0, -10.0, 5.0), vec3(0.4, 0.2, 0.9), 5.0)
+);
+
+const int DIR_LIGHT_COUNT = 1;
+directional_light directional_lights[] = directional_light[](
+    directional_light(vec3(1.0, -1.0, 0.0), vec3(1.0, 1.0f, 1.0))
 );
 
 layout(set = 0, binding = 0) uniform material {
@@ -29,10 +47,15 @@ layout(set = 0, binding = 0) uniform material {
 	float metallic_factor;
 	float roughness_factor;
 	float ao_factor;
+        float emissive_factor;
+        float emissive_strength;
 };
 
 layout(set = 0, binding = 1) uniform sampler2D albedo_map;
 layout(set = 0, binding = 2) uniform sampler2D metallic_roughness_map;
+layout(set = 0, binding = 3) uniform sampler2D normal_map;
+layout(set = 0, binding = 4) uniform sampler2D occlusion_map;
+layout(set = 0, binding = 5) uniform sampler2D emissive_map;
 
 vec3 fresnel_schlick(float cos_theta, vec3 f0)
 {
@@ -75,49 +98,83 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness)
 }
 
 void main() {
-	vec3 n = normalize(v_normal);
-	vec3 v = normalize(cam_position - world_position);
+    vec3 n = texture(normal_map, v_uv).xyz * 2.0 - 1.0;
+    n = normalize(TBN * n);
 
-	vec3 albedo = pow(texture(albedo_map, v_uv).rgb, vec3(2.2));
-	float metallic = texture(metallic_roughness_map, v_uv).b;
-	float roughness = texture(metallic_roughness_map, v_uv).g;
+    vec3 v = normalize(cam_position - world_position);
 
-	vec3 lo = vec3(0.0f);
-	for(int i = 0; i < NUM_LIGHTS; i++) {
-		vec3 l = normalize(point_lights[i].position - world_position);
-		vec3 h = normalize(v + l);
+    vec3 albedo = pow(texture(albedo_map, v_uv).rgb, vec3(2.2));
+    float metallic = texture(metallic_roughness_map, v_uv).b;
+    float roughness = texture(metallic_roughness_map, v_uv).g;
+    float ao = texture(occlusion_map, v_uv).r * ao_factor;
+    vec3 emissive = + pow(texture(emissive_map, v_uv).rgb, vec3(2.2)) * emissive_factor * emissive_strength;
 
-		float distance = length(point_lights[i].position - world_position);
-		float attenuation = 1.0f / (distance * distance);
-		vec3 radiance = point_lights[i].color * attenuation;
+    vec3 lo = vec3(0.0f);
 
-		// Specular factor
-		vec3 f0 = vec3(0.04); // surface reflection at 0
-		f0 = mix(f0, albedo, metallic);
-		vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+    for(int i = 0; i < POINT_LIGHT_COUNT; i++) {
+	    vec3 l = normalize(point_lights[i].position - world_position);
+	    vec3 h = normalize(v + l);
 
-		float ndf = distribution_GGX(n, h, roughness);
-		float g = geometry_smith(n, v, l, roughness);
+	    float distance = length(point_lights[i].position - world_position);
+	    float attenuation = 1.0f / (distance * distance);
+	    vec3 radiance = point_lights[i].color * attenuation;
 
-		vec3 numerator = ndf * g * f;
-		float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
-		vec3 specular = numerator / denominator;
+	    // Specular factor
+	    vec3 f0 = vec3(0.04); // surface reflection at 0
+	    f0 = mix(f0, albedo, metallic);
+	    vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
 
-		vec3 ks = f;
-		vec3 kd = vec3(1.0f) - f;
-		kd *= (1.0f - metallic);
+	    float ndf = distribution_GGX(n, h, roughness);
+	    float g = geometry_smith(n, v, l, roughness);
 
-		float lambertian_factor = max(dot(n,l), 0.0f);
-		lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
-	}
+	    vec3 numerator = ndf * g * f;
+	    float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
+	    vec3 specular = numerator / denominator;
 
-	// Ambient lighting
-	vec3 ambient = vec3(0.03) * albedo * ao_factor;
-	vec3 color = ambient + lo;
+	    vec3 ks = f;
+	    vec3 kd = vec3(1.0f) - ks;
+	    kd *= (1.0f - metallic);
 
-	// Gamma correction
-	color = color / (color + vec3(1.0));
-	color = pow(color, vec3(1.0/2.2)); 
+	    float lambertian_factor = max(dot(n,l), 0.0f);
+	    lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
+    }
 
-	frag_color = vec4(color, 1.0f);
+    for(int i = 0; i < DIR_LIGHT_COUNT ; i++) {
+	    vec3 l = normalize(-directional_lights[i].direction);
+	    vec3 h = normalize(v + l);
+
+	    vec3 radiance = directional_lights[i].color;
+
+	    // Specular factor
+	    vec3 f0 = vec3(0.04); // surface reflection at 0
+	    f0 = mix(f0, albedo, metallic);
+	    vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+
+	    float ndf = distribution_GGX(n, h, roughness);
+	    float g = geometry_smith(n, v, l, roughness);
+
+	    vec3 numerator = ndf * g * f;
+	    float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
+	    vec3 specular = numerator / denominator;
+
+	    vec3 ks = f;
+	    vec3 kd = vec3(1.0f) - ks;
+	    kd *= (1.0f - metallic);
+
+	    float lambertian_factor = max(dot(n,l), 0.0f);
+	    lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
+    }
+
+    // Ambient lighting
+    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 color = ambient + lo;
+
+    // Emissive 
+    color += emissive;
+
+    // Gamma correction
+    color = color / (color + vec3(1.0));
+    color = pow(color, vec3(1.0/2.2)); 
+
+    frag_color = vec4(color, 1.0f);
 }

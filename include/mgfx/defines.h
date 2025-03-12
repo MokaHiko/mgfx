@@ -13,4 +13,26 @@ typedef enum MGFX_SHADER_STAGE {
   MGFX_SHADER_STAGE_COUNT
 } MGFX_SHADER_STAGE;
 
+typedef enum mgfx_vertex_attribute {
+    MGFX_VERTEX_ATTRIBUTE_INVALID = 0,
+    MGFX_VERTEX_ATTRIBUTE_POSITION,
+    MGFX_VERTEX_ATTRIBUTE_NORMAL,
+    MGFX_VERTEX_ATTRIBUTE_TANGENT,
+    MGFX_VERTEX_ATTRIBUTE_TEXCOORD,
+    MGFX_VERTEX_ATTRIBUTE_COLOR,
+    MGFX_VERTEX_ATTRIBUTE_JOINTS,
+    MGFX_VERTEX_ATTRIBUTE_WEIGHTS,
+    MGFX_VERTEX_ATTRIBUTE_CUSTOM,
+
+    MGFX_VERTEX_ATTRIBUTE_COUNT
+} mgfx_vertex_attribute;
+
+enum { MGFX_MAX_VERTEX_BINDINGS = 16 };
+typedef struct mgx_vertex_layout {
+    size_t attribute_sizes[MGFX_VERTEX_ATTRIBUTE_COUNT];
+    size_t attribute_offsets[MGFX_VERTEX_ATTRIBUTE_COUNT];
+
+    size_t stride;
+} mgfx_vertex_layout;
+
 #endif
