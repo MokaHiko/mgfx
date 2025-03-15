@@ -14,8 +14,8 @@
 #include <vulkan/vulkan_metal.h>
 #elif defined(MX_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#include <vulkan/vulkan_win32.h>
 #include <windows.h>
+#include <vulkan/vulkan_win32.h>
 #endif
 
 #include <spirv_reflect/spirv_reflect.h>
@@ -1124,7 +1124,7 @@ void texture_create(uint32_t width, uint32_t height, VkFormat format, VkFilter f
     image_create(width,
                  height,
                  format,
-                 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, 0, &texture->image);
+                 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &texture->image);
     image_create_view(&texture->image,
                       VK_IMAGE_VIEW_TYPE_2D,
                       VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1245,11 +1245,7 @@ int mgfx_init(const mgfx_init_info* info) {
     vkEnumerateInstanceVersion(&api_version);
     MX_LOG_INFO("Instance ApiVersion: %d.%d.%d", VK_VERSION_MAJOR(api_version),
                 VK_VERSION_MINOR(api_version), VK_VERSION_PATCH(api_version));
-#ifdef MX_MACOS
     app_info.apiVersion = VK_API_VERSION_1_2;
-#elif define(MX_WIN32)
-    app_info.apiVersion = VK_API_VERSION_1_2;
-#endif
 
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType                = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
