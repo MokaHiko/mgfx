@@ -24,7 +24,7 @@ static uint32_t k_indices[] = {0, 1, 2, 0, 2, 3};
 
 const size_t k_quad_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
-mgfx_sh vsh, fsh;
+mgfx_sh quad_vsh, fsh;
 mgfx_ph gfxph;
 
 mgfx_vbh vbh;
@@ -34,9 +34,9 @@ mgfx_th sprite;
 mgfx_dh u_diffuse;
 
 void mgfx_example_init() {
-    vsh = mgfx_shader_create("assets/shaders/sprites.vert.glsl.spv");
+    quad_vsh = mgfx_shader_create("assets/shaders/sprites.vert.glsl.spv");
     fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
-    gfxph = mgfx_program_create_graphics(vsh, fsh);
+    gfxph = mgfx_program_create_graphics(quad_vsh, fsh);
 
     vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));
     ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
@@ -45,21 +45,16 @@ void mgfx_example_init() {
 
     mgfx_image_info img_info = {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
-
         .width = 1,
         .height = 1,
-
         .layers = 1,
-
         .cube_map = MX_FALSE,
     };
 
-    sprite = mgfx_texture_create(&img_info, VK_FILTER_NEAREST, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    uint32_t data = 0xFFFF;
+    sprite = mgfx_texture_create_from_memory(&img_info, VK_FILTER_NEAREST, &data, 1);
     mgfx_set_texture(u_diffuse, sprite);
 }
-
-// TODO: Remove
-void mgfx_example_updates(const draw_ctx* ctx) {}
 
 void mgfx_example_update() {
     for (int x = -2; x < 3; x++) {
@@ -85,7 +80,7 @@ void mgfx_example_update() {
         glm_mat4_identity(view);
         mgfx_set_view(view[0]);
 
-        mgfx_submit(0, gfxph);
+        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
     }
 }
 
@@ -96,7 +91,7 @@ void mgfx_example_shutdown() {
     mgfx_buffer_destroy(ibh.idx);
 
     mgfx_program_destroy(gfxph);
-    mgfx_shader_destroy(vsh);
+    mgfx_shader_destroy(quad_vsh);
     mgfx_shader_destroy(fsh);
 }
 

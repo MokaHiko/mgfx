@@ -3,7 +3,16 @@
 
 #include "defines.h"
 #include <mx/mx.h>
+
 #include <vulkan/vulkan_core.h>
+
+#ifdef __cplusplus
+extern "C" {  // Ensure C++ linkage compatibility
+#endif
+
+void vertex_layout_begin(mgfx_vertex_layout* vl);
+void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size);
+void vertex_layout_end(mgfx_vertex_layout* vl);
 
 typedef MX_API struct {
     char name[256];
@@ -16,7 +25,7 @@ typedef MX_API struct {
  * @param info pointer to an `mgfx_init_info` struct containing initialization parameters.
  * @return mgfx_success (0) if successful, or an error code otherwise.
  */
-MX_API int mgfx_init(const mgfx_init_info* info);
+MX_API [[nodiscard]] int mgfx_init(const mgfx_init_info* info);
 
 MX_API void mgfx_frame();
 
@@ -33,8 +42,8 @@ static const uint16_t mgfx_invalid_handle = UINT16_MAX;
     } name;
 
 /**
- * @brief Shader handle
- * @note VkShaderModule
+ * @brief Shader handle.
+ * @note Equivalent to VkShaderModule.
  * */
 MGFX_HANDLE(mgfx_sh)
 
@@ -45,16 +54,21 @@ MGFX_HANDLE(mgfx_sh)
 MGFX_HANDLE(mgfx_ph)
 
 /**
- * @@brief Handle for Vertex buffer
+ * @@brief Handle for Vertex buffer.
  * @note Equivalent to VKBuffer.
  */
 MGFX_HANDLE(mgfx_vbh)
 
 /**
- * @@brief Handle for Index buffer
- * @note Equivalent to VKBuffer.
- */
+ * @brief Handle for Index buffer.
+ * @note Equivalent to VKBuffer. */
 MGFX_HANDLE(mgfx_ibh)
+
+/**
+ * @@brief Handle for Unifrom buffer.
+ * @note Equivalent to VkBuffer.
+ */
+MGFX_HANDLE(mgfx_ubh)
 
 /** @brief Descriptor handle */
 MGFX_HANDLE(mgfx_dh)
@@ -79,91 +93,52 @@ MGFX_HANDLE(mgfx_fbh)
  */
 MGFX_HANDLE(mgfx_th)
 
-void vertex_layout_begin(mgfx_vertex_layout* vl);
+MX_API [[nodiscard]] mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
+MX_API [[nodiscard]] mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len);
+MX_API [[nodiscard]] mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len);
+MX_API void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t size, size_t offset);
+MX_API void mgfx_buffer_destroy(uint64_t buffer_idx);
 
-void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size);
+MX_API [[nodiscard]] mgfx_sh mgfx_shader_create(const char* path);
+MX_API void mgfx_shader_destroy(mgfx_sh sh);
 
-void vertex_layout_end(mgfx_vertex_layout* vl);
+MX_API [[nodiscard]] mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
+MX_API [[nodiscard]] mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
+MX_API void mgfx_program_destroy(mgfx_ph ph);
 
-typedef struct mgfx_texture {
-    mgfx_imgh imgh;        // VkImage
-    uint64_t address_mode; // VkSamplerAddressMode
-    uint64_t sampler;      // VkSampler
-} mgfx_texture;
+MX_API [[nodiscard]] mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage);
+MX_API void mgfx_image_destroy(mgfx_imgh imgh);
 
-typedef struct mgfx_program {
-    mgfx_sh shaders[MGFX_SHADER_STAGE_COUNT];
-    uint64_t dsls[MGFX_SHADER_MAX_DESCRIPTOR_SET]; // VkPipelineLayout
+MX_API [[nodiscard]] mgfx_th
+mgfx_texture_create_from_memory(const mgfx_image_info* info, uint32_t filter, void* data, size_t len);
+MX_API [[nodiscard]] mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter);
+MX_API void mgfx_texture_destroy(mgfx_th th, mx_bool release_image);
 
-    uint64_t pipeline;        // VkPipeline
-    uint64_t pipeline_layout; // VkPipelineLayout
-} mgfx_program;
+MX_API [[nodiscard]] mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
+                                                      uint32_t color_attachment_count,
+                                                      mgfx_imgh depth_attachment);
+MX_API void mgfx_framebuffer_destroy(mgfx_fbh fbh);
 
-typedef struct mgfx_draw {
-    struct descriptor_sets {
-        mgfx_dh dhs[MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
-        uint32_t dh_count;
-    } descriptor_sets[MGFX_SHADER_MAX_DESCRIPTOR_SET];
+MX_API [[nodiscard]] mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type);
+MX_API void mgfx_descriptor_destroy(mgfx_dh dh);
 
-    struct {
-        float model[16];
-        float view[16];
-        float proj[16];
-        float view_inv[16];
-    } graphics_pc;
+MX_API void mgfx_set_buffer(mgfx_dh dh, mgfx_ubh ubh);
+MX_API void mgfx_set_texture(mgfx_dh dh, mgfx_th th);
 
-    mgfx_vbh vbhs[4];
-    uint32_t vbh_count;
+MX_API void mgfx_set_view_target(uint8_t target, mgfx_fbh fb);
 
-    mgfx_ibh ibh;
-    uint32_t index_count;
+MX_API void mgfx_set_transform(const float* mtx);
+MX_API void mgfx_set_view(const float* mtx);
+MX_API void mgfx_set_proj(const float* mtx);
 
-    mgfx_ph ph;
+MX_API void mgfx_bind_vertex_buffer(mgfx_vbh vbh);
+MX_API void mgfx_bind_index_buffer(mgfx_ibh ibh);
+MX_API void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh);
 
-    uint32_t hash;
-} mgfx_draw;
+MX_API void mgfx_submit(uint8_t target, mgfx_ph ph);
 
-[[nodiscard]] mgfx_vbh mgfx_vertex_buffer_create(void* data, size_t len);
-
-[[nodiscard]] mgfx_ibh mgfx_index_buffer_create(void* data, size_t len);
-
-void mgfx_buffer_destroy(uint64_t buffer_idx);
-
-[[nodiscard]] mgfx_sh mgfx_shader_create(const char* path);
-void mgfx_shader_destroy(mgfx_sh sh);
-
-[[nodiscard]] mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
-[[nodiscard]] mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
-void mgfx_program_destroy(mgfx_ph ph);
-
-[[nodiscard]] mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage);
-void mgfx_image_destroy(mgfx_imgh imgh);
-
-mgfx_th mgfx_texture_create(const mgfx_image_info* info, const uint32_t filter, uint32_t usage);
-void mgfx_texture_destroy(mgfx_th th, mx_bool release_image);
-
-[[nodiscard]] mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
-                                               uint32_t color_attachment_count,
-                                               mgfx_imgh depth_attachment);
-
-[[nodiscard]] mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type);
-
-void mgfx_set_texture(mgfx_dh dh, mgfx_th th);
-
-void mgfx_descriptor_destroy(mgfx_dh dh);
-
-void mgfx_bind_vertex_buffer(mgfx_vbh vbh);
-
-void mgfx_bind_index_buffer(mgfx_ibh ibh);
-
-void mgfx_bind_descriptor(uint32_t descriptor_set, mgfx_dh dh);
-
-void mgfx_set_transform(float* mtx);
-
-void mgfx_set_view(float* mtx);
-
-void mgfx_set_proj(float* mtx);
-
-void mgfx_submit(uint32_t target, mgfx_ph ph);
+#ifdef __cplusplus
+}  // End extern "C"
+#endif
 
 #endif

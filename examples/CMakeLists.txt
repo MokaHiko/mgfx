@@ -61,7 +61,11 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blit.vert.glsl
+
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows_lit.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows_lit.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/pbr.frag.glsl
 

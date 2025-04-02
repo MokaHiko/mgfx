@@ -594,11 +594,6 @@ void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspect
 
         .oldLayout = image->layout,
         .newLayout = new_layout,
-
-        /*// Assuming single queue*/
-        /*.srcQueueFamilyIndex,*/
-        /*.dstQueueFamilyIndex,*/
-
         .image = image->handle,
         .subresourceRange =
             {
@@ -639,6 +634,7 @@ void vk_cmd_copy_image_to_image(VkCommandBuffer cmd, const image_vk* src, VkImag
             },
         {{}, {dst->extent.width, dst->extent.height, 1.0f}},
     };
+
     vkCmdBlitImage(cmd, src->handle, src->layout, dst->handle, dst->layout, 1, &blit,
                    VK_FILTER_LINEAR);
 };

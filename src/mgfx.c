@@ -12,6 +12,7 @@
 #include <mx/mx_hash.h>
 #include <mx/mx_memory.h>
 
+#include <stdint.h>
 #include <string.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
@@ -28,17 +29,19 @@
 #include <spirv_reflect/spirv_reflect.h>
 #include <vma/vk_mem_alloc.h>
 
-typedef struct MX_API mx_sampler {
-    int magFilter;
-    int minFilter;
-    int mipmapMode;
-    int addressModeU;
-    int addressModeV;
-    int addressModeW;
-    int mipLodBias;
-    int anisotropyEnable;
-    int maxAnisotropy;
-} mx_sampler;
+typedef struct mgfx_texture {
+    mgfx_imgh imgh;        // VkImage
+    uint64_t address_mode; // VkSamplerAddressMode
+    uint64_t sampler;      // VkSampler
+} mgfx_texture;
+
+typedef struct mgfx_program {
+    mgfx_sh shaders[MGFX_SHADER_STAGE_COUNT];
+    uint64_t dsls[MGFX_SHADER_MAX_DESCRIPTOR_SET]; // VkPipelineLayout
+
+    uint64_t pipeline;        // VkPipeline
+    uint64_t pipeline_layout; // VkPipelineLayout
+} mgfx_program;
 
 typedef enum queues_vk : uint16_t {
     MGFX_QUEUE_GRAPHICS = 0,
@@ -167,12 +170,6 @@ static uint32_t s_frame_idx = 0;
 
 static VkDescriptorPool s_ds_pool;
 
-/*typedef struct dh_bindings {*/
-/*    mgfx_dh dhs[MGFX_SHADER_MAX_DESCRIPTOR_BINDING];*/
-/*} ds_binding_key;*/
-/*MX_UNORDERED_MAP(ds_map, ds_binding_key, VkDescriptorSet);*/
-/*static ds_map s_ds_map;*/
-
 enum { MGFX_MAX_FRAME_BUFFER_COPIES = 256 };
 static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_buffer_copy_count = 0;
@@ -187,16 +184,13 @@ static buffer_vk s_image_staging_buffer;
 static size_t s_image_staging_buffer_offset;
 
 // TODO: Change param to image create info
-void image_create(uint32_t width,
-                  uint32_t height,
-                  VkFormat format,
-                  uint32_t array_layers,
+void image_create(const mgfx_image_info* info,
                   VkImageUsageFlags usage,
                   VkImageCreateFlags flags,
                   image_vk* image) {
-    image->format = format;
-    image->layer_count = array_layers;
-    image->extent = (VkExtent3D){width, height, 1};
+    image->format = info->format;
+    image->layer_count = info->layers;
+    image->extent = (VkExtent3D){info->width, info->height, 1};
 
     usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
@@ -208,7 +202,7 @@ void image_create(uint32_t width,
         .format = image->format,
         .extent = image->extent,
         .mipLevels = 1,
-        .arrayLayers = array_layers,
+        .arrayLayers = info->layers,
         .samples = 1,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = usage,
@@ -257,7 +251,7 @@ void image_create_view(const image_vk* image,
     VK_CHECK(vkCreateImageView(s_device, &info, NULL, view));
 }
 
-void image_update(size_t size, const void* data, image_vk* image) {
+void image_update(const void* data, size_t size, image_vk* image) {
     void* bound_memory;
     vmaMapMemory(s_allocator, s_image_staging_buffer.allocation, &bound_memory);
     memcpy(bound_memory + s_image_staging_buffer_offset, data, size);
@@ -560,7 +554,6 @@ void buffer_pool_destroy(buffer_pool_vk* pool) {
     pool->head = UINT32_MAX;
 }
 
-// TODO: Remove
 void framebuffer_create(uint32_t color_attachment_count,
                         image_vk* color_attachments,
                         image_vk* depth_attachment,
@@ -584,6 +577,7 @@ void framebuffer_create(uint32_t color_attachment_count,
 }
 
 void framebuffer_destroy(framebuffer_vk* fb) {
+    // TODO: Should be api agonstic level
     for (int i = 0; i < fb->color_attachment_count; i++) {
         fb->color_attachments[i] = NULL;
         vkDestroyImageView(s_device, fb->color_attachment_views[i], NULL);
@@ -662,7 +656,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     }
 
     uint32_t binding_count = 0;
-    shader->descriptor_set_count = module.descriptor_set_count;
+    shader->ds_count = module.descriptor_set_count;
     result = spvReflectEnumerateDescriptorBindings(&module, &binding_count, NULL);
     if (binding_count > 0) {
         MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
@@ -671,7 +665,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
         spvReflectEnumerateDescriptorBindings(&module, &binding_count, bindings);
 
         for (uint32_t i = 0; i < binding_count; i++) {
-            descriptor_set_info_vk* ds = &shader->descriptor_sets[bindings[i]->set];
+            descriptor_set_info_vk* ds = &shader->ds_infos[bindings[i]->set];
 
             ds->bindings[bindings[i]->binding] = (VkDescriptorSetLayoutBinding){
                 .binding = bindings[i]->binding,
@@ -721,309 +715,6 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
 };
 
 void shader_destroy(shader_vk* shader) { vkDestroyShaderModule(s_device, shader->module, NULL); }
-
-void program_create_compute(const shader_vk* cs, program_vk* program) {
-    program->shaders[MGFX_SHADER_STAGE_COMPUTE] = cs;
-
-    VkDescriptorSetLayout flat_ds_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
-    int flat_ds_layout_count = 0;
-
-    for (int ds_index = 0; ds_index < cs->descriptor_set_count; ds_index++) {
-        const descriptor_set_info_vk* ds = &cs->descriptor_sets[ds_index];
-
-        if (ds->binding_count <= 0) {
-            continue;
-        };
-
-        VkDescriptorSetLayoutCreateInfo ds_layout_info = {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .bindingCount = ds->binding_count,
-            .pBindings = ds->bindings,
-        };
-        VK_CHECK(vkCreateDescriptorSetLayout(
-            s_device, &ds_layout_info, NULL, &program->descriptor_set_layouts[ds_index]));
-
-        flat_ds_layouts[flat_ds_layout_count] = program->descriptor_set_layouts[flat_ds_layout_count];
-        ++flat_ds_layout_count;
-    }
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .setLayoutCount = flat_ds_layout_count,
-        .pSetLayouts = flat_ds_layouts,
-        .pushConstantRangeCount = cs->pc_count,
-        .pPushConstantRanges = cs->pc_ranges,
-    };
-    VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_info, NULL, &program->layout));
-
-    VkComputePipelineCreateInfo info = {
-        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .stage =
-            {
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .pNext = NULL,
-                .flags = 0,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-                .module = cs->module,
-                .pName = "main",
-                .pSpecializationInfo = NULL,
-            },
-        .layout = program->layout,
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex = 0,
-    };
-
-    VK_CHECK(vkCreateComputePipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
-}
-
-// TODO: Remove
-void program_create_graphics(const shader_vk* vs,
-                             const shader_vk* fs,
-                             const framebuffer_vk* fb,
-                             program_vk* program) {
-    MX_ASSERT(vs != NULL, "Graphics program requires at least a valid vertex shader!");
-
-    const MGFX_SHADER_STAGE gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX, MGFX_SHADER_STAGE_FRAGMENT};
-    uint32_t shader_stage_count = fs != NULL ? 2 : 1;
-
-    program->shaders[MGFX_SHADER_STAGE_VERTEX] = vs;
-    program->shaders[MGFX_SHADER_STAGE_FRAGMENT] = fs;
-
-    VkGraphicsPipelineCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.pNext = NULL;
-    info.flags = 0;
-    info.stageCount = shader_stage_count;
-
-    VkPipelineShaderStageCreateInfo shader_stage_infos[2] = {0};
-
-    shader_stage_infos[0] = (VkPipelineShaderStageCreateInfo){
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .module = vs->module,
-        .pName = "main",
-        .pSpecializationInfo = NULL,
-    };
-
-    if (fs) {
-        shader_stage_infos[1] = (VkPipelineShaderStageCreateInfo){
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fs->module,
-            .pName = "main",
-            .pSpecializationInfo = NULL,
-        };
-    }
-
-    info.pStages = shader_stage_infos;
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .vertexBindingDescriptionCount = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_binding_count,
-        .pVertexBindingDescriptions = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_bindings,
-        .vertexAttributeDescriptionCount = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attribute_count,
-        .pVertexAttributeDescriptions = program->shaders[MGFX_SHADER_STAGE_VERTEX]->vertex_attributes,
-    };
-    info.pVertexInputState = &vertex_input_state_info;
-
-    VkPipelineInputAssemblyStateCreateInfo input_assembly_state_info = {};
-    input_assembly_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly_state_info.pNext = NULL;
-    input_assembly_state_info.flags = 0;
-    input_assembly_state_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    input_assembly_state_info.primitiveRestartEnable = VK_FALSE;
-    info.pInputAssemblyState = &input_assembly_state_info;
-
-    VkPipelineTessellationStateCreateInfo tesselation_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .patchControlPoints = 0,
-    };
-    info.pTessellationState = &tesselation_state_info;
-
-    VkPipelineViewportStateCreateInfo viewport_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .viewportCount = 1,
-        .pViewports = NULL, // Part of dynamic state.
-        .scissorCount = 1,
-        .pScissors = NULL, // Part of dynamic state.
-    };
-    info.pViewportState = &viewport_state_info;
-
-    VkPipelineRasterizationStateCreateInfo rasterization_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f,
-    };
-    info.pRasterizationState = &rasterization_state_info;
-
-    VkPipelineMultisampleStateCreateInfo multisample_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .rasterizationSamples = 1,
-        .sampleShadingEnable = VK_FALSE,
-        .minSampleShading = 1.0,
-        .pSampleMask = NULL,
-        .alphaToCoverageEnable = VK_FALSE,
-        .alphaToOneEnable = VK_FALSE,
-    };
-    info.pMultisampleState = &multisample_state_info;
-
-    if (fb->depth_attachment) {
-        VkPipelineDepthStencilStateCreateInfo depth_stencil_state_info = {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .pNext = NULL,
-            .flags = 0,
-            .depthTestEnable = VK_TRUE,
-            .depthWriteEnable = VK_TRUE,
-            .depthCompareOp = VK_COMPARE_OP_LESS,
-            .depthBoundsTestEnable = VK_FALSE,
-            .stencilTestEnable = VK_FALSE,
-            .front = {},
-            .back = {},
-            .minDepthBounds = 0.0f,
-            .maxDepthBounds = 1.0f,
-        };
-        info.pDepthStencilState = &depth_stencil_state_info;
-    } else {
-        info.pDepthStencilState = NULL;
-    }
-
-    VkPipelineColorBlendAttachmentState color_blend_attachment = {
-        .blendEnable = VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .colorBlendOp = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .alphaBlendOp = VK_BLEND_OP_ADD,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-                          VK_COLOR_COMPONENT_A_BIT,
-    };
-
-    VkPipelineColorBlendStateCreateInfo color_blend_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .logicOpEnable = VK_FALSE,
-        .logicOp = VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = &color_blend_attachment,
-    };
-    info.pColorBlendState = &color_blend_state_info;
-
-    const VkDynamicState k_dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    const uint32_t k_dynamic_state_count = sizeof(k_dynamic_states) / sizeof(VkDynamicState);
-
-    VkPipelineDynamicStateCreateInfo dynamic_state_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .dynamicStateCount = k_dynamic_state_count,
-        .pDynamicStates = k_dynamic_states,
-    };
-    info.pDynamicState = &dynamic_state_info;
-
-    VkDescriptorSetLayout flat_ds_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
-    int flat_ds_layout_count = 0;
-
-    VkPushConstantRange flat_pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
-    int flat_pc_range_count = 0;
-
-    for (int i = 0; i < 2; i++) {
-        const shader_vk* shader = program->shaders[gfx_stages[i]];
-
-        if (shader == NULL) {
-            continue;
-        }
-
-        for (int ds_index = 0; ds_index < shader->descriptor_set_count; ds_index++) {
-            const descriptor_set_info_vk* ds = &shader->descriptor_sets[ds_index];
-
-            if (ds->binding_count <= 0) {
-                continue;
-            };
-
-            VkDescriptorSetLayoutCreateInfo ds_layout_info = {
-                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                .pNext = NULL,
-                .flags = 0,
-                .bindingCount = ds->binding_count,
-                .pBindings = ds->bindings,
-            };
-
-            VK_CHECK(vkCreateDescriptorSetLayout(
-                s_device, &ds_layout_info, NULL, &program->descriptor_set_layouts[ds_index]));
-
-            flat_ds_layouts[flat_ds_layout_count] = program->descriptor_set_layouts[flat_ds_layout_count];
-            ++flat_ds_layout_count;
-        }
-
-        for (int pc_index = 0; pc_index < shader->pc_count; pc_index++) {
-            flat_pc_ranges[flat_pc_range_count] = shader->pc_ranges[flat_pc_range_count];
-            ++flat_pc_range_count;
-        }
-    }
-
-    VkPipelineLayoutCreateInfo pipeline_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .setLayoutCount = flat_ds_layout_count,
-        .pSetLayouts = flat_ds_layouts,
-        .pushConstantRangeCount = flat_pc_range_count,
-        .pPushConstantRanges = flat_pc_ranges,
-    };
-    VK_CHECK(vkCreatePipelineLayout(s_device, &pipeline_layout_info, NULL, &program->layout));
-    info.layout = program->layout;
-
-    // Dynamic Rendering.
-    info.renderPass = NULL;
-
-    VkFormat color_attachment_formats[fb->color_attachment_count] = {};
-    for (int i = 0; i < fb->color_attachment_count; i++) {
-        color_attachment_formats[i] = fb->color_attachments[i]->format;
-    }
-
-    VkPipelineRenderingCreateInfoKHR rendering_create_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
-        .pNext = NULL,
-        .viewMask = 0,
-        .colorAttachmentCount = fb->color_attachment_count,
-        .pColorAttachmentFormats = color_attachment_formats,
-        .depthAttachmentFormat = fb->depth_attachment ? fb->depth_attachment->format : VK_FORMAT_UNDEFINED,
-        .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
-    };
-    info.pNext = &rendering_create_info;
-
-    VK_CHECK(vkCreateGraphicsPipelines(s_device, NULL, 1, &info, NULL, &program->pipeline));
-}
 
 void pipeline_create_graphics(const shader_vk* vs,
                               const shader_vk* fs,
@@ -1189,38 +880,49 @@ void pipeline_create_graphics(const shader_vk* vs,
     };
     info.pDynamicState = &dynamic_state_info;
 
-    VkDescriptorSetLayout flat_dsl[MGFX_SHADER_MAX_DESCRIPTOR_SET];
-    int flat_dsl_count = 0;
+    int ds_count = 0;
+
+    VkDescriptorSetLayoutBinding flat_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
+    memset(flat_bindings, 0, sizeof(VkDescriptorSetLayoutBinding) * MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
+
+    uint32_t max_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
+    memset(max_bindings, 0, sizeof(uint32_t) * MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
+
+    VkDescriptorSetLayout ds_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
+    memset(ds_layouts, 0, sizeof(VkDescriptorSetLayout) * MGFX_SHADER_MAX_DESCRIPTOR_SET);
 
     VkPushConstantRange flat_pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
+    memset(flat_pc_ranges, 0, sizeof(VkPushConstantRange) * MGFX_SHADER_MAX_PUSH_CONSTANTS);
     int flat_pc_range_count = 0;
 
-    for (int i = 0; i < 2; i++) {
-        const shader_vk* shader = i == 0 ? vs : fs;
+    // Resolve multi stage descriptor bindings
+    for (int stage_idx = 0; stage_idx < 2; stage_idx++) {
+        const shader_vk* shader = stage_idx == 0 ? vs : fs;
 
         if (shader == NULL) {
             continue;
         }
 
-        for (int ds_index = 0; ds_index < shader->descriptor_set_count; ds_index++) {
-            const descriptor_set_info_vk* ds = &shader->descriptor_sets[ds_index];
+        ds_count = shader->ds_count > ds_count ? shader->ds_count : ds_count;
+
+        for (int ds_idx = 0; ds_idx < shader->ds_count; ds_idx++) {
+            const descriptor_set_info_vk* ds = &shader->ds_infos[ds_idx];
 
             if (ds->binding_count <= 0) {
                 continue;
             };
 
-            VkDescriptorSetLayoutCreateInfo dsl_info = {
-                .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                .pNext = NULL,
-                .flags = 0,
-                .bindingCount = ds->binding_count,
-                .pBindings = ds->bindings,
-            };
+            for (uint32_t binding = 0; binding < ds->binding_count; binding++) {
+                max_bindings[ds_idx] = binding > max_bindings[ds_idx] ? binding : max_bindings[ds_idx];
 
-            VK_CHECK(vkCreateDescriptorSetLayout( s_device, &dsl_info, NULL, (VkDescriptorSetLayout*)&program->dsls[ds_index]));
+                VkDescriptorSetLayoutBinding* ds_bindings = &flat_bindings[ds_idx * MGFX_SHADER_MAX_DESCRIPTOR_BINDING + binding];
 
-            flat_dsl[flat_dsl_count] = (VkDescriptorSetLayout)program->dsls[flat_dsl_count];
-            ++flat_dsl_count;
+                if (ds_bindings->stageFlags != 0) {
+                    ds_bindings->stageFlags |= stage_idx == 0 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+                } else {
+                    *ds_bindings = ds->bindings[binding];
+                }
+            }
         }
 
         for (int pc_index = 0; pc_index < shader->pc_count; pc_index++) {
@@ -1229,12 +931,25 @@ void pipeline_create_graphics(const shader_vk* vs,
         }
     }
 
+    for (int ds_idx = 0; ds_idx < ds_count; ds_idx++) {
+        VkDescriptorSetLayoutCreateInfo dsl_info = {
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .bindingCount = max_bindings[ds_idx] + 1,
+            .pBindings = &flat_bindings[ds_idx * MGFX_SHADER_MAX_DESCRIPTOR_BINDING],
+        };
+
+        VK_CHECK(vkCreateDescriptorSetLayout(s_device, &dsl_info, NULL, (VkDescriptorSetLayout*)&program->dsls[ds_idx]));
+        ds_layouts[ds_idx] = (VkDescriptorSetLayout)program->dsls[ds_idx];
+    }
+
     VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .setLayoutCount = flat_dsl_count,
-        .pSetLayouts = flat_dsl,
+        .setLayoutCount = ds_count,
+        .pSetLayouts = ds_layouts,
         .pushConstantRangeCount = flat_pc_range_count,
         .pPushConstantRanges = flat_pc_ranges,
     };
@@ -1264,67 +979,18 @@ void pipeline_create_graphics(const shader_vk* vs,
     VK_CHECK(vkCreateGraphicsPipelines(s_device, NULL, 1, &info, NULL, (VkPipeline*)&program->pipeline));
 }
 
-void program_destroy(program_vk* program) {
-    for (int i = 0; i < MGFX_SHADER_MAX_DESCRIPTOR_SET; i++) {
-        if (program->descriptor_set_layouts[i] == VK_NULL_HANDLE) {
+void pipeline_destroy(mgfx_program* program) {
+    for (uint32_t descriptor_idx = 0; descriptor_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET; descriptor_idx++) {
+        if ((VkDescriptorSetLayout)program->dsls[descriptor_idx] == VK_NULL_HANDLE) {
             continue;
         }
 
-        vkDestroyDescriptorSetLayout(s_device, program->descriptor_set_layouts[i], NULL);
+        vkDestroyDescriptorSetLayout(s_device, (VkDescriptorSetLayout)program->dsls[descriptor_idx], NULL);
     }
 
-    vkDestroyPipelineLayout(s_device, program->layout, NULL);
-    vkDestroyPipeline(s_device, program->pipeline, NULL);
+    vkDestroyPipelineLayout(s_device, (VkPipelineLayout)program->pipeline_layout, NULL);
+    vkDestroyPipeline(s_device, (VkPipeline)program->pipeline, NULL);
 }
-
-// TODO: Remove
-void texture_create_2d(
-    uint32_t width, uint32_t height, VkFormat format, VkFilter filter, texture_vk* texture) {
-    VkSamplerCreateInfo sampler_info = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = NULL,
-        .flags = 0,
-        .magFilter = filter,
-        .minFilter = filter,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .mipLodBias = 0,
-        .anisotropyEnable = VK_FALSE,
-        .maxAnisotropy = 0,
-        .compareEnable = VK_FALSE,
-        .compareOp = VK_COMPARE_OP_ALWAYS,
-        .minLod = 0.0f,
-        .maxLod = 1.0f,
-        .borderColor = {},
-        .unnormalizedCoordinates = {},
-    };
-
-    VK_CHECK(vkCreateSampler(s_device, &sampler_info, NULL, &texture->sampler));
-
-    image_create(width,
-                 height,
-                 format,
-                 1, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, 0, &texture->image);
-    image_create_view(&texture->image,
-                      VK_IMAGE_VIEW_TYPE_2D,
-                      VK_IMAGE_ASPECT_COLOR_BIT,
-                      &texture->view);
-};
-
-void texture_destroy(texture_vk* texture) {
-    // TODO: Remove put in queue
-    vkDeviceWaitIdle(s_device);
-
-    vkDestroySampler(s_device, texture->sampler, NULL);
-    texture->sampler = VK_NULL_HANDLE;
-
-    vkDestroyImageView(s_device, texture->view, NULL);
-    texture->view = VK_NULL_HANDLE;
-
-    image_destroy(&texture->image);
-};
 
 // TODO: Remove
 void descriptor_buffer_create(const buffer_vk* buffer, descriptor_info_vk* descriptor) {
@@ -1342,78 +1008,6 @@ void descriptor_image_create(const VkImageView* image_view, descriptor_info_vk* 
                                            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                        }};
 }
-
-// TODO: Remove
-void descriptor_texture_create(const texture_vk* texture, descriptor_info_vk* descriptor) {
-    *descriptor = (descriptor_info_vk){.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                                       .image_info = {
-                                           .sampler = texture->sampler,
-                                           .imageView = texture->view,
-                                           .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                       }};
-}
-
-// TODO: Remove
-void descriptor_write(VkDescriptorSet set, uint32_t binding, const descriptor_info_vk* descriptor) {
-    VkWriteDescriptorSet write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .pNext = NULL,
-        .dstSet = set,
-        .dstBinding = binding,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = descriptor->type,
-        .pImageInfo = NULL,
-        .pBufferInfo = NULL,
-        .pTexelBufferView = NULL,
-    };
-
-    switch (descriptor->type) {
-    case VK_DESCRIPTOR_TYPE_SAMPLER:
-    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-
-    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-        write.pImageInfo = &descriptor->image_info;
-        break;
-
-    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-        write.pBufferInfo = &descriptor->buffer_info;
-        break;
-
-    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-    case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
-    case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
-    case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
-    case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-    case VK_DESCRIPTOR_TYPE_MAX_ENUM:
-    default:
-        MX_LOG_ERROR("Unsupported descriptor type!");
-        break;
-    };
-
-    vkUpdateDescriptorSets(s_device, 1, &write, 0, NULL);
-}
-
-void program_create_descriptor_set(program_vk* program, VkDescriptorSet* ds) {
-    VkDescriptorSetAllocateInfo alloc_info = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .pNext = NULL,
-        .descriptorPool = s_ds_pool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &program->descriptor_set_layouts[program->descriptor_set_count]};
-
-    ++program->descriptor_set_count;
-
-    VK_CHECK(vkAllocateDescriptorSets(s_device, &alloc_info, ds));
-};
 
 mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain_vk* sc) {
     if (sc->resize == MX_TRUE) {
@@ -1460,19 +1054,12 @@ mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain
     return MX_TRUE;
 }
 
-typedef struct vertex_buffer_entry {
+typedef struct buffer_entry {
     VkBuffer key;
-    vertex_buffer_vk value;
+    buffer_vk value;
     UT_hash_handle hh;
-} vertex_buffer_entry;
-static vertex_buffer_entry* s_vertex_buffer_table;
-
-typedef struct index_buffer_entry {
-    VkBuffer key;
-    index_buffer_vk value;
-    UT_hash_handle hh;
-} index_buffer_entry;
-static index_buffer_entry* s_index_buffer_table;
+} buffer_entry;
+static buffer_entry* s_buffer_table;
 
 typedef struct image_entry {
     VkImage key;
@@ -1523,17 +1110,48 @@ typedef struct framebuffer_entry {
 } framebuffer_entry;
 static framebuffer_entry* s_framebuffer_table;
 
-uint32_t s_width;
-uint32_t s_height;
+typedef struct mgfx_draw {
+    struct descriptor_sets {
+        mgfx_dh dhs[MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
+        uint32_t dh_count;
+    } descriptor_sets[MGFX_SHADER_MAX_DESCRIPTOR_SET];
+
+    struct {
+        float model[16];
+        float view[16];
+        float proj[16];
+        float view_inv[16];
+    } draw_pc;
+
+    mgfx_vbh vbhs[4];
+    uint32_t vbh_count;
+
+    mgfx_ibh ibh;
+    uint32_t index_count;
+
+    mgfx_ph ph;
+    uint8_t view_target;
+
+    uint64_t sort_key;
+} mgfx_draw;
 
 static int draw_compare_fn(const void* a, const void* b) {
     const mgfx_draw* draw_a = (mgfx_draw*)a;
     const mgfx_draw* draw_b = (mgfx_draw*)b;
 
-    return draw_a->hash > draw_b->hash;
+    return draw_a->sort_key > draw_b->sort_key;
 }
 
-static mgfx_draw s_draws[64];
+mgfx_fbh s_view_targets[0xFF];
+
+uint32_t s_width;
+uint32_t s_height;
+
+static float s_current_transform[16];
+static float s_current_view[16];
+static float s_current_proj[16];
+
+static mgfx_draw s_draws[256];
 static uint32_t s_draw_count = 0;
 
 int mgfx_init(const mgfx_init_info* info) {
@@ -1835,48 +1453,66 @@ int mgfx_init(const mgfx_init_info* info) {
 
     mx_arena_free(&vk_init_arena);
 
-    // s_swapchain.framebuffer.color_attachments;
-    // mgfx_fbh swapchain_fb = mgfx_framebuffer_create(mgfx_imgh *color_attachments, uint32_t
-    // color_attachment_count, mgfx_imgh depth_attachment);
+    memset(s_view_targets, 0, sizeof(mgfx_fbh) * 0xFF);
 
     MX_LOG_SUCCESS("MGFX Initialized!");
     return MGFX_SUCCESS;
 }
 
-mgfx_vbh mgfx_vertex_buffer_create(void* data, size_t len) {
-    vertex_buffer_entry* entry = mx_alloc(sizeof(vertex_buffer_entry), 0);
+mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len) {
+    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
     vertex_buffer_create(len, data, &entry->value);
 
     entry->key = entry->value.handle;
-    HASH_ADD(hh, s_vertex_buffer_table, key, sizeof(mgfx_vbh), entry);
+    HASH_ADD(hh, s_buffer_table, key, sizeof(mgfx_vbh), entry);
 
     return (mgfx_vbh){.idx = (uint64_t)entry->key};
 }
 
-mgfx_ibh mgfx_index_buffer_create(void* data, size_t len) {
-    index_buffer_entry* entry = mx_alloc(sizeof(index_buffer_entry), 0);
+mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
+    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
     index_buffer_create(len, data, &entry->value);
 
     entry->key = entry->value.handle;
-    HASH_ADD(hh, s_index_buffer_table, key, sizeof(mgfx_ibh), entry);
+    HASH_ADD(hh, s_buffer_table, key, sizeof(mgfx_ibh), entry);
 
     return (mgfx_ibh){.idx = (uint64_t)entry->key};
 }
 
-void mgfx_buffer_destroy(uint64_t buffer_idx) {
-    // buffer_entry* entry;
-    /*HASH_FIND(hh, s_buffers, &sh, sizeof(sh), entry);*/
-    // buffer_destroy(buffer_vk *buffer)
+mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len) {
+    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
+    uniform_buffer_create(len, data, &entry->value);
+
+    entry->key = entry->value.handle;
+    HASH_ADD(hh, s_buffer_table, key, sizeof(mgfx_ubh), entry);
+
+    return (mgfx_ubh){.idx = (uint64_t)entry->key};
+}
+
+void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t size, size_t offset) {
+    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
+    HASH_FIND(hh, s_buffer_table, &buffer_idx, sizeof(uint64_t), entry);
+    MX_ASSERT(entry != NULL, "Buffer invalid handle!");
+
+    buffer_update(&entry->value, offset, size, data);
+}
+
+void mgfx_buffer_destroy(uint64_t idx) {
+    buffer_entry* entry;
+    HASH_FIND(hh, s_buffer_table, &idx, sizeof(idx), entry);
+
+    MX_ASSERT(entry != NULL, "Buffer invalid handle!");
+    buffer_destroy(&entry->value);
 }
 
 mgfx_sh mgfx_shader_create(const char* path) {
-    mx_arena arena = mx_arena_alloc(MX_MB);
-
     size_t size;
     if (mx_read_file(path, &size, NULL) != MX_SUCCESS) {
         MX_LOG_ERROR("Failed to load shader: %s!", path);
         exit(-1);
     }
+
+    mx_arena arena = mx_arena_alloc(MX_MB);
 
     char* shader_code = mx_arena_push(&arena, size);
     mx_read_file(path, &size, shader_code);
@@ -1885,8 +1521,8 @@ mgfx_sh mgfx_shader_create(const char* path) {
     memset(entry, 0, sizeof(shader_entry));
 
     shader_create(size, shader_code, &entry->value);
-    entry->key = entry->value.module;
 
+    entry->key = entry->value.module;
     HASH_ADD(hh, s_shader_table, key, sizeof(VkShaderModule), entry);
 
     mx_arena_free(&arena);
@@ -1897,7 +1533,12 @@ void mgfx_shader_destroy(mgfx_sh sh) {
     shader_entry* entry;
     HASH_FIND(hh, s_shader_table, &sh, sizeof(sh), entry);
 
+    MX_ASSERT(entry != NULL, "Shader invalid handle!");
+
     shader_destroy(&entry->value);
+
+    HASH_DEL(s_shader_table, entry);
+    mx_free(entry);
 }
 
 mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
@@ -1930,18 +1571,20 @@ void mgfx_program_destroy(mgfx_ph ph) {
     program_entry* entry;
     HASH_FIND(hh, s_program_table, &ph, sizeof(ph), entry);
 
-    mx_free(entry);
+    pipeline_destroy(&entry->value);
 
-    /*program_destroy(&entry->value);*/
+    HASH_DEL(s_program_table, entry);
+    mx_free(entry);
 }
 
 mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage) {
-    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-
     image_entry* entry = mx_alloc(sizeof(image_entry), 0);
     memset(entry, 0, sizeof(image_entry));
 
-    image_create(info->width, info->height, info->format, info->layers, usage, 0, &entry->value);
+    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    image_create(info, usage, 0, &entry->value);
+
     entry->key = entry->value.handle;
     HASH_ADD(hh, s_image_table, key, sizeof(VkImage), entry);
 
@@ -1950,7 +1593,7 @@ mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage) {
 
 void mgfx_image_destroy(mgfx_imgh imgh) {
     image_entry* entry;
-    HASH_FIND(hh, s_image_table, &imgh, sizeof(imgh), entry);
+    HASH_FIND(hh, s_image_table, &imgh, sizeof(mgfx_imgh), entry);
 
     if (!entry) {
         MX_LOG_WARN("Attempting to destroy invalid image handle!");
@@ -1958,21 +1601,22 @@ void mgfx_image_destroy(mgfx_imgh imgh) {
     }
 
     image_destroy(&entry->value);
+
+    HASH_DEL(s_image_table, entry);
     mx_free(entry);
 }
 
-mgfx_th mgfx_texture_create(const mgfx_image_info* info, const uint32_t filter, uint32_t usage) {
+mgfx_th
+mgfx_texture_create_from_memory(const mgfx_image_info* info, uint32_t filter, void* data, size_t len) {
     texture_entry* entry = mx_alloc(sizeof(texture_entry), 0);
     memset(entry, 0, sizeof(texture_entry));
 
-    entry->value.imgh = mgfx_image_create(info, usage | VK_IMAGE_USAGE_SAMPLED_BIT);
+    entry->value.imgh = mgfx_image_create(info, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
     image_entry* image_entry;
     HASH_FIND(hh, s_image_table, &entry->value.imgh, sizeof(mgfx_imgh), image_entry);
 
-    uint32_t data = 0xFFFFF;
-    // TODO: Handle transitions properly.
-    image_update(1, &data, &image_entry->value);
+    image_update(data, len, &image_entry->value);
 
     VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1997,20 +1641,80 @@ mgfx_th mgfx_texture_create(const mgfx_image_info* info, const uint32_t filter, 
 
     VK_CHECK(vkCreateSampler(s_device, &sampler_info, NULL, (VkSampler*)&entry->value.sampler));
 
-    image_create_view(&image_entry->value, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, (VkImageView*)(&entry->key));
-
+    image_create_view(
+        &image_entry->value, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, (VkImageView*)(&entry->key));
     HASH_ADD(hh, s_texture_table, key, sizeof(uint64_t), entry);
 
     return entry->key;
 };
 
+mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
+    texture_entry* entry = mx_alloc(sizeof(texture_entry), 0);
+    memset(entry, 0, sizeof(texture_entry));
+
+    entry->value.imgh = img;
+
+    image_entry* image_entry;
+    HASH_FIND(hh, s_image_table, &entry->value.imgh, sizeof(mgfx_imgh), image_entry);
+
+    VkSamplerCreateInfo sampler_info = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .magFilter = filter,
+        .minFilter = filter,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0,
+        .anisotropyEnable = VK_FALSE,
+        .maxAnisotropy = 0,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = 1.0f,
+        .borderColor = {},
+        .unnormalizedCoordinates = {},
+    };
+
+    // TODO: Make aspect argument
+    if (image_entry->value.format == VK_FORMAT_D32_SFLOAT) {
+        image_create_view(&image_entry->value,
+                          VK_IMAGE_VIEW_TYPE_2D,
+                          VK_IMAGE_ASPECT_DEPTH_BIT,
+                          (VkImageView*)(&entry->key));
+        HASH_ADD(hh, s_texture_table, key, sizeof(uint64_t), entry);
+    } else {
+        image_create_view(&image_entry->value,
+                          VK_IMAGE_VIEW_TYPE_2D,
+                          VK_IMAGE_ASPECT_COLOR_BIT,
+                          (VkImageView*)(&entry->key));
+        HASH_ADD(hh, s_texture_table, key, sizeof(uint64_t), entry);
+    }
+
+    VK_CHECK(vkCreateSampler(s_device, &sampler_info, NULL, (VkSampler*)&entry->value.sampler));
+
+    return entry->key;
+}
+
 void mgfx_texture_destroy(mgfx_th th, mx_bool release_image) {
+    VK_CHECK(vkDeviceWaitIdle(s_device));
+
     texture_entry* entry;
     HASH_FIND(hh, s_texture_table, &th, sizeof(th), entry);
+    MX_ASSERT(entry != NULL, "Texture invalid handle!");
 
+    // TODO: Move to texture_destroy
+    vkDestroyImageView(s_device, (VkImageView)entry->key.idx, NULL);
+    vkDestroySampler(s_device, (VkSampler)entry->value.sampler, NULL);
+
+    HASH_DEL(s_texture_table, entry);
     if (release_image) {
         mgfx_image_destroy(entry->value.imgh);
     }
+
+    mx_free(entry);
 }
 
 mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type) {
@@ -2028,6 +1732,22 @@ mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type) {
     return entry->key;
 }
 
+void mgfx_set_buffer(mgfx_dh dh, mgfx_ubh ubh) {
+    descriptor_entry* entry;
+    HASH_FIND(hh, s_descriptor_table, &dh, sizeof(dh), entry);
+    MX_ASSERT(entry != NULL, "Descriptor invalid handle!");
+
+    buffer_entry* buffer_entry;
+    HASH_FIND(hh, s_buffer_table, &ubh, sizeof(ubh), buffer_entry);
+    MX_ASSERT(buffer_entry != NULL, "buffer invalid handle!");
+
+    entry->value.buffer_info.buffer = (VkBuffer)ubh.idx;
+    entry->value.buffer_info.offset = 0;
+    entry->value.buffer_info.range = VK_WHOLE_SIZE;
+
+    entry->value.buffer = &buffer_entry->value;
+}
+
 void mgfx_set_texture(mgfx_dh dh, mgfx_th th) {
     descriptor_entry* entry;
     HASH_FIND(hh, s_descriptor_table, &dh, sizeof(dh), entry);
@@ -2040,6 +1760,11 @@ void mgfx_set_texture(mgfx_dh dh, mgfx_th th) {
     entry->value.image_info.imageView = (VkImageView)th.idx;
     entry->value.image_info.sampler = (VkSampler)texture_entry->value.sampler;
     entry->value.image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    image_entry* image_entry;
+    HASH_FIND(hh, s_image_table, &texture_entry->value.imgh, sizeof(mgfx_imgh), image_entry);
+    MX_ASSERT(image_entry != NULL, "Image invalid handle!");
+    entry->value.image = &image_entry->value;
 }
 
 void mgfx_descriptor_destroy(mgfx_dh dh) {}
@@ -2047,7 +1772,7 @@ void mgfx_descriptor_destroy(mgfx_dh dh) {}
 mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
                                  uint32_t color_attachment_count,
                                  mgfx_imgh depth_attachment) {
-    // TODO: Framebuffer should be a agonstic concept.
+    // TODO: Framebuffer should be an api agonstic concept.
     framebuffer_entry* entry = mx_alloc(sizeof(framebuffer_entry), 0);
     memset(entry, 0, sizeof(framebuffer_entry));
 
@@ -2074,7 +1799,25 @@ mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
                           &fb->depth_attachment_view);
     }
 
+    entry->key.idx = (uint64_t)fb;
+    HASH_ADD(hh, s_framebuffer_table, key, sizeof(mgfx_fbh), entry);
+
     return entry->key;
+}
+
+void mgfx_framebuffer_destroy(mgfx_fbh fbh) {
+    framebuffer_entry* framebuffer_entry;
+    HASH_FIND(hh, s_framebuffer_table, &fbh, sizeof(mgfx_fbh), framebuffer_entry);
+
+    if (!framebuffer_entry) {
+        MX_LOG_WARN("Attempting to destroy invalid framebuffer handle!");
+        return;
+    }
+
+    framebuffer_destroy(&framebuffer_entry->value);
+
+    HASH_DEL(s_framebuffer_table, framebuffer_entry);
+    mx_free(framebuffer_entry);
 }
 
 void mgfx_bind_vertex_buffer(mgfx_vbh vbh) {
@@ -2089,35 +1832,27 @@ void mgfx_bind_index_buffer(mgfx_ibh ibh) {
     current_draw->ibh = ibh;
 }
 
-void mgfx_bind_descriptor(uint32_t descriptor_set, mgfx_dh dh) {
-    MX_ASSERT(descriptor_set < MGFX_SHADER_MAX_DESCRIPTOR_SET);
+void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh) {
+    MX_ASSERT(ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET);
 
     mgfx_draw* current_draw = &s_draws[s_draw_count];
 
-    uint32_t descriptor_idx = current_draw->descriptor_sets[descriptor_set].dh_count;
+    uint32_t descriptor_idx = current_draw->descriptor_sets[ds_idx].dh_count;
     MX_ASSERT(descriptor_idx < MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
 
-    current_draw->descriptor_sets[descriptor_set].dhs[descriptor_idx] = dh;
-    ++current_draw->descriptor_sets[descriptor_set].dh_count;
+    current_draw->descriptor_sets[ds_idx].dhs[descriptor_idx] = dh;
+    ++current_draw->descriptor_sets[ds_idx].dh_count;
 }
 
-void mgfx_set_transform(float* mtx) {
-    mgfx_draw* current_draw = &s_draws[s_draw_count];
-    memcpy(current_draw->graphics_pc.model, mtx, sizeof(float) * 16);
-}
+void mgfx_set_view_target(uint8_t target, mgfx_fbh fb) { s_view_targets[target] = fb; }
 
-void mgfx_set_view(float* mtx) {
-    mgfx_draw* current_draw = &s_draws[s_draw_count];
-    memcpy(current_draw->graphics_pc.view, mtx, sizeof(float) * 16);
-    memcpy(current_draw->graphics_pc.view_inv, mtx, sizeof(float) * 16);
-}
+void mgfx_set_transform(const float* mtx) { memcpy(s_current_transform, mtx, sizeof(float) * 16); }
 
-void mgfx_set_proj(float* mtx) {
-    mgfx_draw* current_draw = &s_draws[s_draw_count];
-    memcpy(current_draw->graphics_pc.proj, mtx, sizeof(float) * 16);
-}
+void mgfx_set_view(const float* mtx) { memcpy(s_current_view, mtx, sizeof(float) * 16); }
 
-void mgfx_submit(uint32_t target, mgfx_ph ph) {
+void mgfx_set_proj(const float* mtx) { memcpy(s_current_proj, mtx, sizeof(float) * 16); }
+
+void mgfx_submit(uint8_t target, mgfx_ph ph) {
     program_entry* entry;
     HASH_FIND(hh, s_program_table, &ph, sizeof(ph), entry);
     MX_ASSERT(entry != NULL, "Program invalid handle!");
@@ -2131,6 +1866,7 @@ void mgfx_submit(uint32_t target, mgfx_ph ph) {
                   &program->shaders[MGFX_SHADER_STAGE_VERTEX],
                   sizeof(VkShaderModule),
                   vs_entry);
+        const shader_vk* vs = vs_entry ? &vs_entry->value : NULL;
 
         shader_entry* fs_entry;
         HASH_FIND(hh,
@@ -2138,36 +1874,34 @@ void mgfx_submit(uint32_t target, mgfx_ph ph) {
                   &program->shaders[MGFX_SHADER_STAGE_FRAGMENT],
                   sizeof(VkShaderModule),
                   fs_entry);
+        const shader_vk* fs = fs_entry ? &fs_entry->value : NULL;
 
-        if (target == 0) {
-            pipeline_create_graphics(&vs_entry->value, &fs_entry->value, &s_swapchain.framebuffer, program);
+        if (target == MGFX_DEFAULT_VIEW_TARGET) {
+            pipeline_create_graphics(vs, fs, &s_swapchain.framebuffer, program);
         } else {
             framebuffer_entry* fb_entry;
-
-            mgfx_fbh fbh = {.idx = target};
-            HASH_FIND(hh, s_framebuffer_table, &fbh, sizeof(mgfx_fbh), fs_entry);
+            HASH_FIND(hh, s_framebuffer_table, &s_view_targets[target], sizeof(mgfx_fbh), fb_entry);
 
             if (!fb_entry) {
-                return;
+                MX_LOG_ERROR("Submitting to unknown view target '%d'! Please call mgfx_set_view_target().",
+                             target);
             }
+
+            pipeline_create_graphics(vs, fs, &fb_entry->value, program);
         }
     }
 
-    // TODO: Remove
     mgfx_draw* current_draw = &s_draws[s_draw_count];
+    current_draw->view_target = target;
     current_draw->ph = ph;
 
-    struct draw_hash_key {
-        uint64_t program_idx;
-        uint64_t vb_idx;
-        uint64_t ib_idx;
-    } draw_hash_key;
+    memcpy(current_draw->draw_pc.model, s_current_transform, sizeof(float) * 16);
+    memcpy(current_draw->draw_pc.view, s_current_view, sizeof(float) * 16);
+    memcpy(current_draw->draw_pc.proj, s_current_proj, sizeof(float) * 16);
 
-    draw_hash_key.program_idx = ph.idx;
-    draw_hash_key.ib_idx = current_draw->ibh.idx;
-    draw_hash_key.vb_idx = current_draw->vbh_count;
-    mx_murmur_hash_32(current_draw, sizeof(draw_hash_key), ph.idx, &current_draw->hash);
-
+    current_draw->sort_key = ((uint64_t)(target) << 56) | // highest priority (view)
+                             ((uint64_t)(ph.idx) << 40);  // then shader program
+                                                          /*| ((uint64_t)(materialhash) << 8);*/
     ++s_draw_count;
 }
 
@@ -2341,46 +2075,110 @@ void mgfx_frame() {
                             VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_GENERAL);
 
-    // TODO: Remove
-    draw_ctx ctx = {
-        .cmd = frame->cmd,
-        .frame_target = &s_swapchain.framebuffer,
-    };
-    mgfx_example_updates(&ctx);
-
-    VkClearColorValue clear = {.float32 = {0.6f, 0.5f, 0.2f, 1.0f}};
+    VkClearColorValue clear = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    vk_cmd_clear_image(frame->cmd, &s_swapchain.images[s_swapchain.free_idx], &range, &clear);
-
-    // Sort draws
+    // Sort draws by view target and program
     qsort(s_draws, s_draw_count, sizeof(mgfx_draw), draw_compare_fn);
 
     mgfx_program* current_program = NULL;
 
-    vk_cmd_begin_rendering(frame->cmd, &s_swapchain.framebuffer);
+    framebuffer_vk* fb = NULL;
+    uint8_t target = 10;
+
+    VkDescriptorSet flat_ds[MGFX_SHADER_MAX_DESCRIPTOR_SET];
+    uint32_t flat_ds_count = 0;
 
     for (uint32_t draw_idx = 0; draw_idx < s_draw_count; draw_idx++) {
         const mgfx_draw* draw = &s_draws[draw_idx];
 
-        program_entry* program_entry;
-        HASH_FIND(hh, s_program_table, &draw->ph, sizeof(mgfx_ph), program_entry);
+        if (draw->view_target != target) {
+            if (fb != NULL) {
+                vk_cmd_end_rendering(frame->cmd);
+            }
 
-        VkDeviceSize offsets = 0;
+            target = draw->view_target;
 
-        if (current_program != &program_entry->value) {
-            current_program = &program_entry->value;
-            vkCmdBindPipeline(
-                frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)current_program->pipeline);
+            if (target == MGFX_DEFAULT_VIEW_TARGET) {
+                fb = &s_swapchain.framebuffer;
+            } else {
+                framebuffer_entry* fb_entry;
+                HASH_FIND(hh, s_framebuffer_table, &s_view_targets[target], sizeof(mgfx_fbh), fb_entry);
+                fb = &fb_entry->value;
+            }
+
+            program_entry* program_entry;
+            HASH_FIND(hh, s_program_table, &draw->ph, sizeof(mgfx_ph), program_entry);
+
+            if (current_program != &program_entry->value) {
+                current_program = &program_entry->value;
+                vkCmdBindPipeline(
+                    frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)current_program->pipeline);
+            }
+
+            for (uint32_t ds_idx = 0; ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET; ds_idx++) {
+                if (draw->descriptor_sets[ds_idx].dh_count <= 0) {
+                    continue;
+                }
+                // TODO: Pre pass resource barriers and transitions
+                for (uint32_t binding_idx = 0; binding_idx < draw->descriptor_sets[ds_idx].dh_count;
+                     binding_idx++) {
+                    mgfx_dh dh = draw->descriptor_sets[ds_idx].dhs[binding_idx];
+                    const descriptor_entry* descriptor_entry;
+
+                    HASH_FIND(hh, s_descriptor_table, &dh, sizeof(mgfx_dh), descriptor_entry);
+                    MX_ASSERT(descriptor_entry != NULL, "Descriptor invalid handle!");
+
+                    switch (descriptor_entry->value.type) {
+                    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                        if (descriptor_entry->value.image->layout !=
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                            switch (descriptor_entry->value.image->format) {
+                            case (VK_FORMAT_D32_SFLOAT):
+                                vk_cmd_transition_image(frame->cmd,
+                                                        descriptor_entry->value.image,
+                                                        VK_IMAGE_ASPECT_DEPTH_BIT,
+                                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                                break;
+                            default:
+                                vk_cmd_transition_image(frame->cmd,
+                                                        descriptor_entry->value.image,
+                                                        VK_IMAGE_ASPECT_COLOR_BIT,
+                                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                                break;
+                            }
+                        }
+                        break;
+                    case VK_DESCRIPTOR_TYPE_MAX_ENUM:
+                    default:
+                        break;
+                    }
+                }
+            }
+
+            for (uint32_t color_attachment_idx = 0; color_attachment_idx < fb->color_attachment_count;
+                 color_attachment_idx++) {
+                vk_cmd_transition_image(frame->cmd,
+                                        fb->color_attachments[color_attachment_idx],
+                                        VK_IMAGE_ASPECT_COLOR_BIT,
+                                        VK_IMAGE_LAYOUT_GENERAL);
+
+                vk_cmd_clear_image(frame->cmd, fb->color_attachments[0], &range, &clear);
+            }
+
+            if (fb->depth_attachment) {
+                vk_cmd_transition_image(
+                    frame->cmd, fb->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_GENERAL);
+            }
+
+            vk_cmd_begin_rendering(frame->cmd, fb);
         }
 
-        VkDescriptorSet flat_ds[MGFX_SHADER_MAX_DESCRIPTOR_SET];
-        uint32_t flat_ds_count = 0;
+        flat_ds_count = 0;
         for (uint32_t ds_idx = 0; ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET; ds_idx++) {
             if (draw->descriptor_sets[ds_idx].dh_count <= 0) {
                 continue;
             }
-
             uint32_t ds_hash;
             mx_murmur_hash_32(draw->descriptor_sets[ds_idx].dhs,
                               draw->descriptor_sets[ds_idx].dh_count * sizeof(mgfx_dh),
@@ -2470,9 +2268,17 @@ void mgfx_frame() {
         }
 
         if (flat_ds_count > 0) {
-            vkCmdBindDescriptorSets(frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipelineLayout)current_program->pipeline_layout, 0, flat_ds_count, flat_ds, 0, NULL);
+            vkCmdBindDescriptorSets(frame->cmd,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    (VkPipelineLayout)current_program->pipeline_layout,
+                                    0,
+                                    flat_ds_count,
+                                    flat_ds,
+                                    0,
+                                    NULL);
         }
 
+        VkDeviceSize offsets = 0;
         if (draw->vbh_count > 0) {
             vkCmdBindVertexBuffers(frame->cmd, 0, draw->vbh_count, (VkBuffer*)draw->vbhs, &offsets);
         }
@@ -2485,40 +2291,48 @@ void mgfx_frame() {
                            (VkPipelineLayout)current_program->pipeline_layout,
                            VK_SHADER_STAGE_VERTEX_BIT,
                            0,
-                           sizeof(draw->graphics_pc),
-                           &draw->graphics_pc);
+                           sizeof(draw->draw_pc),
+                           &draw->draw_pc);
 
         if (draw->ibh.idx != (uint64_t)VK_NULL_HANDLE) {
-            const index_buffer_entry* index_buffer_entry;
-            HASH_FIND(hh, s_index_buffer_table, &draw->ibh, sizeof(mgfx_ibh), index_buffer_entry);
+            const buffer_entry* index_buffer_entry;
+            HASH_FIND(hh, s_buffer_table, &draw->ibh, sizeof(mgfx_ibh), index_buffer_entry);
 
-            MX_ASSERT(index_buffer_entry != NULL, "Index buffer invlaid handle!");
+            if (index_buffer_entry) {
+                VmaAllocationInfo index_buffer_alloc_info = {};
+                vmaGetAllocationInfo(
+                    s_allocator, index_buffer_entry->value.allocation, &index_buffer_alloc_info);
 
-            VmaAllocationInfo index_buffer_alloc_info = {};
-            vmaGetAllocationInfo(s_allocator, index_buffer_entry->value.allocation, &index_buffer_alloc_info);
+                uint32_t count = index_buffer_alloc_info.size / sizeof(uint32_t);
+                vkCmdDrawIndexed(frame->cmd, count, 1, 0, 0, 0);
+            } else {
+                MX_LOG_WARN("Index buffer invlaid handle!");
+            }
 
-            uint32_t count = index_buffer_alloc_info.size / sizeof(uint32_t);
-            vkCmdDrawIndexed(frame->cmd, count, 1, 0, 0, 0);
         } else {
-            const vertex_buffer_entry* vertex_buffer_entry;
-            HASH_FIND(hh, s_vertex_buffer_table, &draw->vbhs[0], sizeof(mgfx_vbh), vertex_buffer_entry);
+            const buffer_entry* vertex_buffer_entry;
+            HASH_FIND(hh, s_buffer_table, &draw->vbhs[0], sizeof(mgfx_vbh), vertex_buffer_entry);
 
-            MX_ASSERT(vertex_buffer_entry != NULL, "Invalid vertex buffer handle!");
+            if (vertex_buffer_entry) {
+                VmaAllocationInfo vertex_buffer_alloc_info = {};
+                vmaGetAllocationInfo(
+                    s_allocator, vertex_buffer_entry->value.allocation, &vertex_buffer_alloc_info);
 
-            VmaAllocationInfo vertex_buffer_alloc_info = {};
-            vmaGetAllocationInfo(
-                s_allocator, vertex_buffer_entry->value.allocation, &vertex_buffer_alloc_info);
-
-            uint32_t count = vertex_buffer_alloc_info.size / sizeof(uint32_t);
-            vkCmdDraw(frame->cmd, count, 1, 0, 0);
+                uint32_t count = vertex_buffer_alloc_info.size / sizeof(uint32_t);
+                vkCmdDraw(frame->cmd, count, 1, 0, 0);
+            } else {
+                MX_LOG_WARN("Invalid vertex buffer handle!");
+            }
         }
     }
 
-    // Reset draws
+    // Clear draws
     memset(s_draws, 0, s_draw_count * sizeof(mgfx_draw));
     s_draw_count = 0;
 
-    vk_cmd_end_rendering(frame->cmd);
+    if (fb != NULL) {
+        vk_cmd_end_rendering(frame->cmd);
+    }
 
     vk_cmd_transition_image(frame->cmd,
                             &s_swapchain.images[s_swapchain.free_idx],

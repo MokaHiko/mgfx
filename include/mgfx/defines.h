@@ -54,4 +54,6 @@ enum { K_SHADER_MAX_VERTEX_ATTRIBUTES = 16 };
 typedef struct mgfx_descriptor {
 } mgfx_descriptor;
 
+enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF };
+
 #endif

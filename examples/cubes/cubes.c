@@ -65,23 +65,20 @@ static uint32_t k_indices[] = {
     20, 21, 22, 20, 22, 23};
 const size_t k_cube_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
-mgfx_sh vsh, fsh;
+mgfx_sh quad_vsh, fsh;
 mgfx_ph gfxph;
 
 mgfx_vbh vbh;
 mgfx_ibh ibh;
 
 void mgfx_example_init() {
-    vsh = mgfx_shader_create("assets/shaders/unlit.vert.glsl.spv");
+    quad_vsh = mgfx_shader_create("assets/shaders/unlit.vert.glsl.spv");
     fsh = mgfx_shader_create("assets/shaders/unlit.frag.glsl.spv");
-    gfxph = mgfx_program_create_graphics(vsh, fsh);
+    gfxph = mgfx_program_create_graphics(quad_vsh, fsh);
 
     vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));
     ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
 }
-
-// TODO: Remove
-void mgfx_example_updates(const draw_ctx* ctx) {}
 
 void mgfx_example_update() {
     for (int x = -2; x < 3; x++) {
@@ -117,7 +114,7 @@ void mgfx_example_shutdown() {
     mgfx_buffer_destroy(ibh.idx);
 
     mgfx_program_destroy(gfxph);
-    mgfx_shader_destroy(vsh);
+    mgfx_shader_destroy(quad_vsh);
     mgfx_shader_destroy(fsh);
 }
 

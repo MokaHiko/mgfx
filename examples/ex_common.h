@@ -1,11 +1,11 @@
 #ifndef MGFX_EXAMPLES_COMMON_H
 #define MGFX_EXAMPLES_COMMON_H
 
+// TODO: Remove when api agnostic
+#include <vulkan/vulkan.h>
+
 #include <mgfx/mgfx.h>
 #include <cglm/cglm.h>
-
-// TODO: REMOVE WHEN API AGNOSTIC.
-#include "../../mgfx/src/renderer_vk.h"
 
 #define APP_WIDTH 1280
 #define APP_HEIGHT 720
@@ -38,16 +38,14 @@ void camera_create(mgfx_camera_type type, camera* cam);
 void camera_update(camera* cam);
 
 extern camera g_example_camera;
-extern texture_vk s_default_white;
-extern texture_vk s_default_black;
-extern texture_vk s_default_normal_map;
+extern mgfx_th s_default_white;
+extern mgfx_th s_default_black;
+extern mgfx_th s_default_normal_map;
 
 extern double MGFX_TIME;
 extern double MGFX_TIME_DELTA_TIME;
 
-int load_shader_from_path(const char *file_path, shader_vk *shader);
-
-void load_texture_2d_from_path(const char* path, VkFormat format, texture_vk* texture);
+mgfx_th load_texture_2d_from_path(const char* path, VkFormat format);
 
 int mgfx_example_app();
 
