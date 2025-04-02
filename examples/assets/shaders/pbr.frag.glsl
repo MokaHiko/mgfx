@@ -57,6 +57,8 @@ layout(set = 0, binding = 3) uniform sampler2D normal_map;
 layout(set = 0, binding = 4) uniform sampler2D occlusion_map;
 layout(set = 0, binding = 5) uniform sampler2D emissive_map;
 
+layout(set = 1, binding = 0) uniform sampler2D shadow_map;
+
 vec3 fresnel_schlick(float cos_theta, vec3 f0)
 {
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);

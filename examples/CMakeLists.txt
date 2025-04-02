@@ -37,6 +37,9 @@ target_link_libraries(clear_screen PRIVATE ex_common)
 add_executable(cubes cubes/cubes.c)
 target_link_libraries(cubes PRIVATE ex_common)
 
+add_executable(sprites sprites/sprites.c)
+target_link_libraries(sprites PRIVATE ex_common)
+
 add_library(gltf_loader gltf_loading/gltf_loader.c)
 target_link_libraries(gltf_loader PRIVATE ex_common)
 
@@ -52,8 +55,15 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.frag.glsl
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/sprites.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/sprites.frag.glsl
+
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows.vert.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/pbr.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.frag.glsl

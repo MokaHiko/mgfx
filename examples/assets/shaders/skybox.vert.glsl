@@ -2,6 +2,8 @@
 
 layout(location = 0) in vec3 position;
 
+layout(location = 0) out vec3 v_tex_coords;
+
 layout(push_constant) uniform graphics_pc {
 	mat4 model;
 	mat4 view;
@@ -10,5 +12,6 @@ layout(push_constant) uniform graphics_pc {
 };
 
 void main() {
-	gl_Position = vec4(position, 1.0f);
+	v_tex_coords = vec3(position);
+	gl_Position = proj * view * vec4(position, 1.0f);
 }

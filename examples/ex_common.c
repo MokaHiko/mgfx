@@ -77,7 +77,7 @@ void load_texture_2d_from_path(const char* path, VkFormat format, texture_vk* te
     size_t size = width * height * 4;
 
     // stb loads images 1 byte per channel.
-    texture_create(width, height, format, VK_FILTER_LINEAR, texture);
+    texture_create_2d(width, height, format, VK_FILTER_LINEAR, texture);
     image_update(size, data, &texture->image);
 
     stbi_image_free(data);
@@ -116,14 +116,22 @@ static void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     mouse_last_y = ypos;
 }
 
-void camera_create(camera* cam) {
+void camera_create(mgfx_camera_type type, camera* cam) {
     *cam = (camera){.position = {0.0f, 0.0f, 5.0f},
                     .forward  = {0.0f, 0.0f,-1.0f},
                     .up       = {0.0f, 1.0f, 0.0f},
                     .right    = {1.0f, 0.0f, 0.0f}};
 
-    glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 10000.0f, cam->proj);
-    cam->proj[1][1] *= -1;
+    switch (type) {
+        case mgfx_camera_type_orthographic:
+            glm_ortho(-10.0f, 10.0f, -10.0f, 10.0f, 0.1f, 10000.0f, cam->proj);
+            cam->proj[1][1] *= -1;
+            break;
+        case mgfx_camera_type_perspective:
+            glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 10000.0f, cam->proj);
+            cam->proj[1][1] *= -1;
+            break;
+    }
 
     cam->yaw = -90.0f;
     cam->pitch = 0.0f;
@@ -223,18 +231,18 @@ int mgfx_example_app() {
         return -1;
     }
 
-    camera_create(&g_example_camera);
+    camera_create(mgfx_camera_type_perspective, &g_example_camera);
 
     uint8_t default_white_data[] = { 255, 255, 255, 255 };
-    texture_create(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_white);
+    texture_create_2d(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_white);
     image_update(4, default_white_data, &s_default_white.image);
 
     uint8_t default_black_data[] = {0, 0, 0, 0};
-    texture_create(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_black);
+    texture_create_2d(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_black);
     image_update(4, default_black_data, &s_default_black.image);
 
     uint8_t default_normal_data[] = { 128, 128, 255, 255 };
-    texture_create(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_normal_map);
+    texture_create_2d(1, 1, VK_FORMAT_R8G8B8A8_UNORM, VK_FILTER_NEAREST, &s_default_normal_map);
     image_update(4, default_normal_data, &s_default_normal_map.image);
 
     mgfx_example_init();
@@ -251,7 +259,8 @@ int mgfx_example_app() {
         }
 
         camera_update(&g_example_camera);
-        // mgfx_example_update();
+        mgfx_example_update();
+
         mgfx_frame();
 
         mouse_delta_x = 0.0;

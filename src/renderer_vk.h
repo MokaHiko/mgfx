@@ -78,17 +78,22 @@ void image_create_view(const image_vk* image,
 void image_update(size_t size, const void* data, image_vk* image);
 void image_destroy(image_vk* image);
 
+// TODO: Remove
 typedef struct texture_vk {
     image_vk image;
     VkImageView view;
     VkSampler sampler;
 } texture_vk;
-
-void texture_create(uint32_t width,
-                    uint32_t height,
-                    VkFormat format,
-                    VkFilter filter,
-                    texture_vk* texture);
+void texture_create_2d(uint32_t width,
+                       uint32_t height,
+                       VkFormat format,
+                       VkFilter filter,
+                       texture_vk* texture);
+void texture_create_3d(uint32_t width,
+                       uint32_t height,
+                       VkFormat format,
+                       VkFilter filter,
+                       texture_vk* texture);
 void texture_destroy(texture_vk* texture);
 
 enum { MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS = 4 };
@@ -162,21 +167,16 @@ typedef struct buffer_slice_vk {
 void buffer_slice_allocate(buffer_pool_vk* pool, size_t size, buffer_slice_vk* slice);
 void buffer_slice_update(buffer_slice_vk* slice, size_t size, const void* data);
 
-enum { K_SHADER_MAX_DESCRIPTOR_SET = 4 };
-enum { K_SHADER_MAX_DESCRIPTOR_BINDING = 8 };
-enum { K_SHADER_MAX_PUSH_CONSTANTS = 4 };
-enum { K_SHADER_MAX_VERTEX_BINDINGS = 4 };
-enum { K_SHADER_MAX_VERTEX_ATTRIBUTES = 16 };
 typedef struct descriptor_set_info_vk {
-    VkDescriptorSetLayoutBinding bindings[K_SHADER_MAX_DESCRIPTOR_BINDING];
+    VkDescriptorSetLayoutBinding bindings[MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
     uint32_t binding_count;
 } descriptor_set_info_vk;
 
 typedef struct shader_vk {
-    descriptor_set_info_vk descriptor_sets[K_SHADER_MAX_DESCRIPTOR_SET];
+    descriptor_set_info_vk descriptor_sets[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     int descriptor_set_count;
 
-    VkPushConstantRange pc_ranges[K_SHADER_MAX_PUSH_CONSTANTS];
+    VkPushConstantRange pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
     int pc_count;
 
     // Vertex shader.
@@ -192,42 +192,39 @@ typedef struct shader_vk {
 void shader_create(size_t length, const char* code, shader_vk* shader);
 void shader_destroy(shader_vk* shader);
 
-typedef struct descriptor_vk {
+typedef struct descriptor_info_vk {
+    char name[128];
+    VkDescriptorType type;
+
     union {
         VkDescriptorImageInfo image_info;
         VkDescriptorBufferInfo buffer_info;
     };
+} descriptor_info_vk;
 
-    VkDescriptorType type;
-} descriptor_vk;
+void descriptor_buffer_create(const buffer_vk* buffer, descriptor_info_vk* descriptor);
+void descriptor_image_create(const VkImageView* image_view, descriptor_info_vk* descriptor);
+void descriptor_texture_create(const texture_vk* texture, descriptor_info_vk* descriptor);
 
-void descriptor_buffer_create(const buffer_vk* buffer, descriptor_vk* descriptor);
-void descriptor_image_create(const VkImageView* image_view, descriptor_vk* descriptor);
-void descriptor_texture_create(const texture_vk* texture, descriptor_vk* descriptor);
+void descriptor_write(VkDescriptorSet set, uint32_t binding, const descriptor_info_vk* descriptor);
 
-void descriptor_write(VkDescriptorSet set, uint32_t binding, const descriptor_vk* descriptor);
-
+// TODO: Remove
 typedef struct program_vk {
     const shader_vk* shaders[MGFX_SHADER_STAGE_COUNT];
 
-    VkDescriptorSetLayout descriptor_set_layouts[K_SHADER_MAX_DESCRIPTOR_SET];
+    VkDescriptorSetLayout descriptor_set_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     uint32_t descriptor_set_count;
 
     VkPipelineLayout layout;
     VkPipeline pipeline;
 } program_vk;
-
 void program_create_compute(const shader_vk* cs, program_vk* program);
 void program_create_graphics(const shader_vk* vs,
                              const shader_vk* fs,
                              const framebuffer_vk* fb,
                              program_vk* program);
-
-void program_create_descriptor_sets(const program_vk* program,
-                                    const VkDescriptorBufferInfo* ds_buffer_infos,
-                                    const VkDescriptorImageInfo* ds_image_infos,
-                                    VkDescriptorSet* ds_sets);
-void program_create_descriptor_set(const program_vk* program, VkDescriptorSet* ds);
+// TODO: Remove
+void program_create_descriptor_set(program_vk* program, VkDescriptorSet* ds);
 void program_destroy(program_vk* program);
 
 // TODO: Remove.
@@ -260,11 +257,12 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb);
 void vk_cmd_end_rendering(VkCommandBuffer cmd);
 
 // TODO: Change to encoder
-typedef struct DrawCtx {
+typedef struct draw_ctx {
     VkCommandBuffer cmd;
     framebuffer_vk* frame_target;
-} DrawCtx;
+} draw_ctx;
 
-extern void mgfx_example_updates(const DrawCtx* frame);
+// TODO: Remove
+extern void mgfx_example_updates(const draw_ctx* frame);
 
 #endif

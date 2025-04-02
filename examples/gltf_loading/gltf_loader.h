@@ -5,6 +5,17 @@
 #include "../../mgfx/src/renderer_vk.h"
 #include <cglm/cglm.h>
 
+typedef enum mgfx_material_flags : uint8_t{
+    mgfx_material_flag_casts_none = 0,
+
+    mgfx_material_flag_casts_shadows = 1 << 0,
+    mgfx_material_flag_receive_shadows = 1 << 1,
+
+    mgfx_material_flag_instanced = 1 << 2,
+
+    mgfx_material_flag_max_enum = 0xFF,
+} mgfx_material_flags;
+
 typedef struct mgfx_material {
     struct properties {
         vec3 albedo;
@@ -15,23 +26,24 @@ typedef struct mgfx_material {
         float emissive_strength;
     } properties;
     buffer_vk properties_buffer;
-    descriptor_vk u_properties_buffer;
+    descriptor_info_vk u_properties_buffer;
 
     const texture_vk* albedo_texture;
-    descriptor_vk u_albedo_texture;
+    descriptor_info_vk u_albedo_texture;
 
     const texture_vk* metallic_roughness_texture;
-    descriptor_vk u_metallic_roughness_texture;
+    descriptor_info_vk u_metallic_roughness_texture;
 
     const texture_vk* normal_texture;
-    descriptor_vk u_normal_texture;
+    descriptor_info_vk u_normal_texture;
 
     const texture_vk* occlusion_texture;
-    descriptor_vk u_occlusion_texture;
+    descriptor_info_vk u_occlusion_texture;
 
     const texture_vk* emissive_texture;
-    descriptor_vk u_emissive_texture;
+    descriptor_info_vk u_emissive_texture;
 
+    mgfx_material_flags flags;
     VkDescriptorSet ds;
 } mgfx_material;
 
@@ -84,13 +96,18 @@ typedef struct mgfx_scene {
     mx_arena allocator;
 } mgfx_scene;
 
-
 typedef enum gltf_loader_flags : uint8_t {
-    gltf_loader_flag_textures = 1 << 0,
+    gltf_loader_flag_textures  = 1 << 0,
     gltf_loader_flag_materials = 1 << 1,
-    gltf_loader_flag_meshes = 1 << 2,
+    gltf_loader_flag_meshes    = 1 << 2,
 
-    gltf_loader_flag_all = 0xFF
+    gltf_loader_flag_default = gltf_loader_flag_textures |
+                               gltf_loader_flag_materials |
+                               gltf_loader_flag_meshes,
+
+    gltf_loader_flag_flip_winding = 1 << 3,
+
+    gltf_loader_flag_max_enum = 0xFF
 } gltf_loader_flags;
 
 void load_scene_from_path(const char* path,

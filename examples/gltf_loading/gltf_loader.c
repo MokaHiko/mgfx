@@ -378,11 +378,25 @@ void load_scene_from_path(const char* path,
 
                 if(primitive->indices->component_type == cgltf_component_type_r_16u) {
                     for (int i = 0; i < primitive->indices->count; i++) {
-                        mesh_primitive->indices[i] = *(uint16_t*)(idx_buffer + (i * primitive->indices->stride));
+                        int insert_index = i;
+
+                        if((flags & gltf_loader_flag_flip_winding) == gltf_loader_flag_flip_winding) {
+                            insert_index = primitive->indices->count - 1 - i;
+                        }
+
+                        mesh_primitive->indices[insert_index] = *(uint16_t*)(idx_buffer +
+                                                                (i * primitive->indices->stride));
                     }
                 } else if(primitive->indices->component_type == cgltf_component_type_r_32u){
                     for (int i = 0; i < primitive->indices->count; i++) {
-                        mesh_primitive->indices[i] = *(uint32_t*)(idx_buffer + (i * primitive->indices->stride));
+                        int insert_index = i;
+
+                        if((flags & gltf_loader_flag_flip_winding) == gltf_loader_flag_flip_winding) {
+                            insert_index = primitive->indices->count - 1 - i;
+                        }
+
+                        mesh_primitive->indices[insert_index] = *(uint32_t*)(idx_buffer + 
+                                                                (i * primitive->indices->stride));
                     }
                 }
             }

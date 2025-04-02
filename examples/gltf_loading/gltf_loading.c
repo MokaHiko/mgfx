@@ -8,13 +8,13 @@
 #include <mx/mx_file.h>
 
 // Frame buffer
-image_vk color_attachment;
-image_vk depth_attachment;
-framebuffer_vk mesh_pass_fb;
+image_vk forward_pass_color_attachment;
+image_vk forward_pass_depth_attachment;
+framebuffer_vk forward_pass_fb;
 
-shader_vk vertex_shader;
-shader_vk fragment_shader;
-program_vk gfx_program;
+shader_vk forward_pass_vs;
+shader_vk forward_pass_fs;
+program_vk forward_pass_program;
 
 mgfx_scene gltf;
 
@@ -22,16 +22,16 @@ void mgfx_example_init() {
     image_create(APP_WIDTH, APP_HEIGHT, VK_FORMAT_R16G16B16A16_SFLOAT, 1,
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
-                 0, &color_attachment);
+                 0, &forward_pass_color_attachment);
 
     image_create(APP_WIDTH, APP_HEIGHT, VK_FORMAT_D32_SFLOAT, 1,
-                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0, &depth_attachment);
-    framebuffer_create(1, &color_attachment, &depth_attachment, &mesh_pass_fb);
+                 VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0, &forward_pass_depth_attachment);
+    framebuffer_create(1, &forward_pass_color_attachment, &forward_pass_depth_attachment, &forward_pass_fb);
 
-    load_shader_from_path("assets/shaders/lit.vert.glsl.spv", &vertex_shader);
-    load_shader_from_path("assets/shaders/lit.frag.glsl.spv", &fragment_shader);
+    load_shader_from_path("assets/shaders/lit.vert.glsl.spv", &forward_pass_vs);
+    load_shader_from_path("assets/shaders/lit.frag.glsl.spv", &forward_pass_fs);
 
-    program_create_graphics(&vertex_shader, &fragment_shader, &mesh_pass_fb, &gfx_program);
+    program_create_graphics(&forward_pass_vs, &forward_pass_fs, &forward_pass_fb, &forward_pass_program);
 
     mgfx_vertex_layout vl;
 
@@ -46,27 +46,27 @@ void mgfx_example_init() {
     gltf.vl = &vl;
 
     /*LOAD_GLTF_MODEL("Lantern", &gltf);*/
-    LOAD_GLTF_MODEL("DamagedHelmet", &gfx_program, gltf_loader_flag_all, &gltf);
-    /*LOAD_GLTF_MODEL("Sponza", &gltf);*/
+    LOAD_GLTF_MODEL("DamagedHelmet", &forward_pass_program, gltf_loader_flag_default, &gltf);
+    /*LOAD_GLTF_MODEL("Sponza", &forward_pass_program, gltf_loader_flag_default, &gltf);*/
     /*LOAD_GLTF_MODEL("conan_1", &gltf);*/
     //LOAD_GLTF_MODEL("MetalRoughSpheresNoTextures", &gltf);
     /*LOAD_GLTF_MODEL("MetalRoughSpheres", &gltf);*/
 }
 
-void mgfx_example_updates(const DrawCtx* ctx) {
+void mgfx_example_updates(const draw_ctx* ctx) {
     VkClearColorValue clear = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment,
+    vk_cmd_transition_image(ctx->cmd, &forward_pass_color_attachment,
                             VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    vk_cmd_clear_image(ctx->cmd, &color_attachment, &range, &clear);
+    vk_cmd_clear_image(ctx->cmd, &forward_pass_color_attachment, &range, &clear);
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment,
+    vk_cmd_transition_image(ctx->cmd, &forward_pass_color_attachment,
                             VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
-    vk_cmd_begin_rendering(ctx->cmd, &mesh_pass_fb);
+    vk_cmd_begin_rendering(ctx->cmd, &forward_pass_fb);
 
-    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gfx_program.pipeline);
+    vkCmdBindPipeline(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, forward_pass_program.pipeline);
 
     static struct graphics_pc {
         mat4 model;
@@ -127,16 +127,16 @@ void mgfx_example_updates(const DrawCtx* ctx) {
             vkCmdBindIndexBuffer(ctx->cmd, node_primitive->ib.handle, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(ctx->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, 
-                                    gfx_program.layout, 0, 1, &node_primitive->material->ds, 0, NULL);
+                                    forward_pass_program.layout, 0, 1, &node_primitive->material->ds, 0, NULL);
 
-            vkCmdPushConstants(ctx->cmd, gfx_program.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(graphics_pc), &graphics_pc);
+            vkCmdPushConstants(ctx->cmd, forward_pass_program.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(graphics_pc), &graphics_pc);
             vkCmdDrawIndexed(ctx->cmd, node_primitive->index_count, 1, 0, 0, 0);
         }
     }
 
     vk_cmd_end_rendering(ctx->cmd);
 
-    vk_cmd_transition_image(ctx->cmd, &color_attachment,
+    vk_cmd_transition_image(ctx->cmd, &forward_pass_color_attachment,
                             VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
@@ -145,22 +145,22 @@ void mgfx_example_updates(const DrawCtx* ctx) {
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     vk_cmd_copy_image_to_image(ctx->cmd,
-                               &color_attachment,
+                               &forward_pass_color_attachment,
                                VK_IMAGE_ASPECT_COLOR_BIT,
                                ctx->frame_target->color_attachments[0]);
 }
 
 void mgfx_example_shutdown() {
-    image_destroy(&depth_attachment);
-    image_destroy(&color_attachment);
+    image_destroy(&forward_pass_depth_attachment);
+    image_destroy(&forward_pass_color_attachment);
 
     scene_destroy(&gltf);
 
-    framebuffer_destroy(&mesh_pass_fb);
+    framebuffer_destroy(&forward_pass_fb);
 
-    program_destroy(&gfx_program);
-    shader_destroy(&fragment_shader);
-    shader_destroy(&vertex_shader);
+    program_destroy(&forward_pass_program);
+    shader_destroy(&forward_pass_fs);
+    shader_destroy(&forward_pass_vs);
 }
 
 int main(int argc, char** argv) {
