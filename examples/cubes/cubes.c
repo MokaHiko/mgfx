@@ -1,8 +1,5 @@
 #include "ex_common.h"
 
-int width = 720;
-int height = 480;
-
 typedef struct Vertex {
     float position[3];
     float uv_x;
@@ -85,7 +82,7 @@ void mgfx_example_update() {
         mgfx_bind_vertex_buffer(vbh);
         mgfx_bind_index_buffer(ibh);
 
-        mat4 model;
+        mat4 model = GLM_MAT4_IDENTITY;
         vec3 position = {x * 2.0f, 0.0f, -5.0f};
         glm_mat4_identity(model);
 
@@ -105,8 +102,10 @@ void mgfx_example_update() {
         glm_mat4_identity(view);
         mgfx_set_view(view[0]);
 
-        mgfx_submit(0, gfxph);
+        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
     }
+
+    mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], (mx_vec3){0.0f, 0.0f, 0.0f} , NULL, NULL);
 }
 
 void mgfx_example_shutdown() {

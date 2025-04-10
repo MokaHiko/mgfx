@@ -1,13 +1,12 @@
-#ifndef MGFX_EXAMPLES_COMMON_H
-#define MGFX_EXAMPLES_COMMON_H
-
-// TODO: Remove when api agnostic
-#include <vulkan/vulkan.h>
+#ifndef MGFX_EXAMPLES_COMMON_H_
+#define MGFX_EXAMPLES_COMMON_H_
 
 #include <mgfx/mgfx.h>
+#include <mx/mx_math_types.h>
+
 #include <cglm/cglm.h>
 
-#define APP_WIDTH 1280
+#define APP_WIDTH  1280
 #define APP_HEIGHT 720
 
 typedef enum mgfx_camera_type {
@@ -65,5 +64,12 @@ extern void mgfx_example_init();
 extern void mgfx_example_update();
 
 extern void mgfx_example_shutdown();
+
+// TODO: Candidate functions
+MX_API void mgfx_gizmo_draw_cube(const float* view,
+                                 const float* proj,
+                                 const mx_vec3 position,
+                                 const mx_quat rotation,
+                                 const mx_vec3 scale);
 
 #endif

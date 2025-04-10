@@ -37,8 +37,8 @@ target_link_libraries(clear_screen PRIVATE ex_common)
 add_executable(cubes cubes/cubes.c)
 target_link_libraries(cubes PRIVATE ex_common)
 
-add_executable(sprites sprites/sprites.c)
-target_link_libraries(sprites PRIVATE ex_common)
+add_executable(text_rendering text_rendering/text_rendering.c)
+target_link_libraries(text_rendering PRIVATE ex_common)
 
 add_library(gltf_loader gltf_loading/gltf_loader.c)
 target_link_libraries(gltf_loader PRIVATE ex_common)
@@ -55,6 +55,9 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/unlit.frag.glsl
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/text.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/text.frag.glsl
+
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/sprites.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/sprites.frag.glsl
 
@@ -62,6 +65,9 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blit.vert.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gizmos.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gizmos.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/shadows_lit.vert.glsl
@@ -95,3 +101,19 @@ foreach(SHADER ${SHADERS})
 endforeach()
 
 add_custom_target(compile_shaders ALL DEPENDS ${SPIRV_OUTPUTS})
+
+# Copy fonts directory
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts.copy"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts"
+            "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts"
+    COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts.copy"
+    COMMENT "Copying fonts to binary assets directory"
+)
+
+# Optional: add a custom target to depend on this
+add_custom_target(copy_fonts ALL
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts.copy"
+)

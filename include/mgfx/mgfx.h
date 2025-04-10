@@ -7,12 +7,8 @@
 #include <vulkan/vulkan_core.h>
 
 #ifdef __cplusplus
-extern "C" {  // Ensure C++ linkage compatibility
+extern "C" { // Ensure C++ linkage compatibility
 #endif
-
-void vertex_layout_begin(mgfx_vertex_layout* vl);
-void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size);
-void vertex_layout_end(mgfx_vertex_layout* vl);
 
 typedef MX_API struct {
     char name[256];
@@ -70,6 +66,11 @@ MGFX_HANDLE(mgfx_ibh)
  */
 MGFX_HANDLE(mgfx_ubh)
 
+/**
+ * @@brief Handle for Transient buffer.
+ */
+MGFX_HANDLE(mgfx_tbh)
+
 /** @brief Descriptor handle */
 MGFX_HANDLE(mgfx_dh)
 
@@ -93,9 +94,18 @@ MGFX_HANDLE(mgfx_fbh)
  */
 MGFX_HANDLE(mgfx_th)
 
+
+/**
+ * @brief Renders debug text on the backbuffer.
+ * @note Must be called on main draw loop.
+ */
+MX_API void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
+
 MX_API [[nodiscard]] mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
+
 MX_API [[nodiscard]] mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len);
 MX_API [[nodiscard]] mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len);
+
 MX_API void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t size, size_t offset);
 MX_API void mgfx_buffer_destroy(uint64_t buffer_idx);
 
@@ -138,7 +148,7 @@ MX_API void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh);
 MX_API void mgfx_submit(uint8_t target, mgfx_ph ph);
 
 #ifdef __cplusplus
-}  // End extern "C"
+} // End extern "C"
 #endif
 
 #endif

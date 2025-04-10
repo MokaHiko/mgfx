@@ -5,6 +5,19 @@
 
 #define MGFX_SUCCESS ((uint16_t)0)
 
+typedef enum mgfx_allocation_type {
+    MGFX_ALLOCATION_TYPE_UNKNOWN = 0,
+
+    MGFX_ALLOCATION_TYPE_PRIMARY = 1 << 0,
+    MGFX_ALLOCATION_TYPE_SLICE = 1 << 1,
+    MGFX_ALLOCATION_TYPE_POOL = 1 << 2,
+} mgfx_allocation_type;
+
+enum { MGFX_SHADER_MAX_DESCRIPTOR_SET = 4 };
+enum { MGFX_SHADER_MAX_DESCRIPTOR_BINDING = 8 };
+enum { MGFX_SHADER_MAX_PUSH_CONSTANTS = 4 };
+enum { MGFX_SHADER_MAX_VERTEX_BINDING = 4 };
+enum { MGFX_SHADER_MAX_VERTEX_ATTRIBUTES = 16 };
 typedef enum MGFX_SHADER_STAGE {
     MGFX_SHADER_STAGE_VERTEX = 0,
     MGFX_SHADER_STAGE_FRAGMENT,
@@ -13,29 +26,7 @@ typedef enum MGFX_SHADER_STAGE {
     MGFX_SHADER_STAGE_COUNT
 } MGFX_SHADER_STAGE;
 
-typedef enum mgfx_vertex_attribute {
-    MGFX_VERTEX_ATTRIBUTE_INVALID = 0,
-    MGFX_VERTEX_ATTRIBUTE_POSITION,
-    MGFX_VERTEX_ATTRIBUTE_NORMAL,
-    MGFX_VERTEX_ATTRIBUTE_TANGENT,
-    MGFX_VERTEX_ATTRIBUTE_TEXCOORD,
-    MGFX_VERTEX_ATTRIBUTE_COLOR,
-    MGFX_VERTEX_ATTRIBUTE_JOINTS,
-    MGFX_VERTEX_ATTRIBUTE_WEIGHTS,
-    MGFX_VERTEX_ATTRIBUTE_CUSTOM,
-
-    MGFX_VERTEX_ATTRIBUTE_COUNT
-} mgfx_vertex_attribute;
-
-enum { MGFX_MAX_VERTEX_BINDINGS = 16 };
-typedef struct mgx_vertex_layout {
-    size_t attribute_sizes[MGFX_VERTEX_ATTRIBUTE_COUNT];
-    size_t attribute_offsets[MGFX_VERTEX_ATTRIBUTE_COUNT];
-
-    size_t stride;
-} mgfx_vertex_layout;
-
-typedef struct MX_API mgfx_image_info {
+typedef MX_API struct mgfx_image_info {
     uint32_t format; // VkFormat
 
     uint32_t width;
@@ -46,14 +37,14 @@ typedef struct MX_API mgfx_image_info {
     mx_bool cube_map;
 } mgfx_image_info;
 
-enum { MGFX_SHADER_MAX_DESCRIPTOR_SET = 4 };
-enum { MGFX_SHADER_MAX_DESCRIPTOR_BINDING = 8 };
-enum { MGFX_SHADER_MAX_PUSH_CONSTANTS = 4 };
-enum { K_SHADER_MAX_VERTEX_BINDINGS = 4 };
-enum { K_SHADER_MAX_VERTEX_ATTRIBUTES = 16 };
-typedef struct mgfx_descriptor {
-} mgfx_descriptor;
-
 enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF };
+
+// TODO: Make internal
+typedef struct mgfx_buffer_slice {
+    uint32_t size;
+    uint32_t offset;
+    mx_ptr_t buffer_handle; // VkBuffer
+} mgfx_buffer_slice;
+typedef mgfx_buffer_slice mgfx_transient_buffer;
 
 #endif

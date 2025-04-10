@@ -40,7 +40,7 @@ void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, vo
 enum {
     MGFX_FRAME_0,
     MGFX_FRAME_1,
-    MGFX_FRAME_COUNT = 2 /* MGFX_FRAME_OVERLAP */
+    MGFX_FRAME_COUNT
 };
 
 typedef struct frame_vk {
@@ -103,29 +103,33 @@ int swapchain_create(
 void swapchain_destroy(swapchain_vk* swapchain);
 
 typedef struct buffer_vk {
-    VkBufferUsageFlags usage;
+    // TODO: Remove
+    union {
+        // Ring
+        struct {
+            size_t head;
+            size_t tail;
+        };
+    };
 
-    VmaAllocation allocation;
-    VkBuffer handle;
+    // TODO: Remove
+    mgfx_allocation_type allocation_type;
+
+    VmaAllocation allocation; // VmaAllocation
+    VkBuffer handle;          // VkBuffer
+
+    VkBufferUsageFlags usage; // VkBufferUsageFlags
+    mx_bool resizable;
 } buffer_vk;
 
 typedef buffer_vk vertex_buffer_vk;
 typedef buffer_vk index_buffer_vk;
 typedef buffer_vk uniform_buffer_vk;
 
-typedef struct buffer_pool_vk {
-    buffer_vk buffer;
-    uint32_t head;
-} buffer_pool_vk;
+typedef buffer_vk ring_buffer_vk;
+/*typedef buffer_vk transient_buffer_vk;*/
 
-typedef struct buffer_slice_vk {
-    buffer_pool_vk* buffer_pool;
-    size_t offset;
-    size_t size;
-} buffer_slice_vk;
-
-void buffer_slice_allocate(buffer_pool_vk* pool, size_t size, buffer_slice_vk* slice);
-void buffer_slice_update(buffer_slice_vk* slice, size_t size, const void* data);
+mgfx_buffer_slice buffer_allocate_from_primary(ring_buffer_vk* primary, size_t size);
 
 typedef struct descriptor_set_info_vk {
     VkDescriptorSetLayoutBinding bindings[MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
@@ -140,10 +144,10 @@ typedef struct shader_vk {
     int pc_count;
 
     // Vertex shader.
-    VkVertexInputBindingDescription vertex_bindings[K_SHADER_MAX_VERTEX_BINDINGS];
+    VkVertexInputBindingDescription vertex_bindings[MGFX_SHADER_MAX_VERTEX_BINDING];
     int vertex_binding_count;
 
-    VkVertexInputAttributeDescription vertex_attributes[K_SHADER_MAX_VERTEX_ATTRIBUTES];
+    VkVertexInputAttributeDescription vertex_attributes[MGFX_SHADER_MAX_VERTEX_ATTRIBUTES];
     int vertex_attribute_count;
 
     VkShaderModule module;

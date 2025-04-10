@@ -40,7 +40,7 @@ mgfx_ibh quad_ibh;
 mgfx_th color_fba_texture;
 mgfx_dh u_color_fba;
 
-mgfx_scene gltf;
+mgfx_scene sponza;
 
 void mgfx_example_init() {
     struct mgfx_image_info color_attachment_info = {
@@ -81,9 +81,9 @@ void mgfx_example_init() {
     vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
     vertex_layout_end(&vl);
 
-    gltf.vl = &vl;
+    sponza.vl = &vl;
 
-    LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &gltf);
+    LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &sponza);
 
     quad_vsh = mgfx_shader_create("assets/shaders/blit.vert.glsl.spv");
     quad_fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
@@ -98,15 +98,15 @@ void mgfx_example_init() {
 }
 
 void mgfx_example_update() {
-    for (uint32_t n = 0; n < gltf.node_count; n++) {
-        if (gltf.nodes[n].mesh == NULL) {
+    for (uint32_t n = 0; n < sponza.node_count; n++) {
+        if (sponza.nodes[n].mesh == NULL) {
             continue;
         }
 
-        assert(gltf.nodes[n].mesh->primitive_count > 0);
+        assert(sponza.nodes[n].mesh->primitive_count > 0);
 
         mat4 model = GLM_MAT4_IDENTITY;
-        glm_mat4_mul(gltf.nodes[n].matrix, model, model);
+        glm_mat4_mul(sponza.nodes[n].matrix, model, model);
 
         vec3 position = {0.0f, 0.0f, 0.0f};
         glm_translate(model, position);
@@ -133,8 +133,8 @@ void mgfx_example_update() {
         glm_vec3_scale(uniform_scale, 1.0, uniform_scale);
         glm_scale(model, uniform_scale);
 
-        for (uint32_t p = 0; p < gltf.nodes[n].mesh->primitive_count; p++) {
-            const struct primitive* node_primitive = &gltf.nodes[n].mesh->primitives[p];
+        for (uint32_t p = 0; p < sponza.nodes[n].mesh->primitive_count; p++) {
+            const struct primitive* node_primitive = &sponza.nodes[n].mesh->primitives[p];
 
             if (node_primitive->index_count <= 0) {
                 continue;
@@ -172,7 +172,7 @@ void mgfx_example_shutdown() {
     mgfx_texture_destroy(color_fba_texture, MX_FALSE);
     mgfx_image_destroy(color_fba);
 
-    scene_destroy(&gltf);
+    scene_destroy(&sponza);
 
     mgfx_program_destroy(fp_program);
     mgfx_shader_destroy(fp_fs);

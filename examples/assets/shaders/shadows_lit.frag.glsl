@@ -169,8 +169,7 @@ void main() {
     // Shadow
     // perform perspective divide
     vec3 projCoords = frag_pos_light_space.xyz / frag_pos_light_space.w;
-    // transform to [0,1] range
-    projCoords = projCoords * 0.5 + 0.5;
+
     // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
     float closestDepth = texture(shadow_map, projCoords.xy).r; 
     // get depth of current fragment from light's perspective
