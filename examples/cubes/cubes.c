@@ -82,9 +82,10 @@ void mgfx_example_update() {
         mgfx_bind_vertex_buffer(vbh);
         mgfx_bind_index_buffer(ibh);
 
-        mat4 model = GLM_MAT4_IDENTITY;
-        vec3 position = {x * 2.0f, 0.0f, -5.0f};
+        mat4 model;
         glm_mat4_identity(model);
+
+        vec3 position = {x * 2.0f, 0.0f, -5.0f};
 
         glm_translate(model, position);
 

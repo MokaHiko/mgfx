@@ -105,7 +105,8 @@ void mgfx_example_update() {
 
         assert(sponza.nodes[n].mesh->primitive_count > 0);
 
-        mat4 model = GLM_MAT4_IDENTITY;
+        mat4 model;
+        glm_mat4_identity(model);
         glm_mat4_mul(sponza.nodes[n].matrix, model, model);
 
         vec3 position = {0.0f, 0.0f, 0.0f};

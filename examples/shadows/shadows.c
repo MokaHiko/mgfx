@@ -181,7 +181,8 @@ void draw_scene(
 
         assert(scene->nodes[n].mesh->primitive_count > 0);
 
-        mat4 model = GLM_MAT4_IDENTITY;
+        mat4 model;
+        glm_mat4_identity(model);
         glm_mat4_mul(scene->nodes[n].matrix, model, model);
 
         for (uint32_t p = 0; p < scene->nodes[n].mesh->primitive_count; p++) {
@@ -191,7 +192,8 @@ void draw_scene(
                 continue;
             }
 
-            mat4 transform = GLM_MAT4_IDENTITY;
+            mat4 transform;
+            glm_mat4_identity(transform);
             if (parent_transform != NULL) {
                 glm_mat4_mul(parent_transform, model, transform);
                 mgfx_set_transform(transform[0]);
@@ -235,7 +237,8 @@ void mgfx_example_update() {
     }
 
     // Apply accumulated rotation
-    mat4 rotation_matrix = GLM_MAT4_IDENTITY;
+    mat4 rotation_matrix;
+    glm_mat4_identity(rotation_matrix);
 
     glm_rotate(rotation_matrix, angle, (vec3){0, 0, 1});
     vec3 start_dir = {1.0f, -1.0f, 0.0f};
@@ -272,19 +275,21 @@ void mgfx_example_update() {
     mgfx_buffer_update(dir_lights_buffer.idx, &dir_light.data, sizeof(dir_light.data), 0);
 
     // Update object transforms
-    mat4 sponza_transform = GLM_MAT4_IDENTITY;
+    mat4 sponza_transform;
+    glm_mat4_identity(sponza_transform);
     glm_translate(sponza_transform, (vec3){0.0f, 0.0f, 0.0f});
     glm_scale(sponza_transform, (vec3){1.0f, 1.0f, 1.0f});
 
-    mat4 helmet_transform = GLM_MAT4_IDENTITY;
+    mat4 helmet_transform;
+    glm_mat4_identity(helmet_transform);
     glm_translate(helmet_transform, (vec3){0.0f, 1.5f, 1.0f});
     glm_scale(helmet_transform, (vec3){0.5f, 0.5f, 0.5f});
 
     // Draw shadow pass
-    vec3 neg_dir = GLM_VEC3_ZERO;
+    vec3 neg_dir = { 0.0f , 0.0f, 0.0f};
     glm_vec3_negate_to(dir_light.data.direction, neg_dir);
 
-    vec3 light_pos = GLM_VEC3_ZERO;
+    vec3 light_pos = { 0.0f, 0.0f, 0.0f };
     glm_vec3_sub(neg_dir, GLM_VEC3_ZERO, light_pos);
     glm_vec3_scale(neg_dir, distance, light_pos);
 
@@ -294,7 +299,9 @@ void mgfx_example_update() {
     memcpy(dir_light.camera.forward, dir_light.data.direction, sizeof(float) * 3);
     camera_update(&dir_light.camera);
 
-    mat4 light_space_matrix = GLM_MAT4_IDENTITY;
+    mat4 light_space_matrix;
+    glm_mat4_identity(light_space_matrix);
+
     glm_mat4_mul(dir_light.camera.proj, dir_light.camera.view, light_space_matrix);
     memcpy(dir_light.data.light_space_matrix, light_space_matrix[0], sizeof(float) * 16);
 
@@ -323,8 +330,8 @@ void mgfx_example_update() {
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
 
-    // Draw gizmo
-    mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
+    // TODO: Fix descriptor draw gizmo
+    // mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
 }
 
 void mgfx_example_shutdown() {

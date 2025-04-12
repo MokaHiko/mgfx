@@ -3,6 +3,7 @@
 
 #include <cglm/cglm.h>
 
+#include <mx/mx.h>
 #include <mgfx/mgfx.h>
 #include <mx/mx_memory.h>
 
@@ -32,7 +33,7 @@ void vertex_layout_begin(mgfx_vertex_layout* vl);
 void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size);
 void vertex_layout_end(mgfx_vertex_layout* vl);
 
-typedef enum mgfx_material_flags : uint8_t {
+typedef enum mgfx_material_flags {
     mgfx_material_flag_casts_none = 0,
 
     mgfx_material_flag_casts_shadows = 1 << 0,
@@ -79,7 +80,7 @@ typedef struct mgfx_mesh {
         mgfx_vbh vbh;
         mgfx_ibh ibh;
 
-        void* vertices;
+        uint8_t* vertices;
         uint32_t vertex_count;
 
         uint32_t* indices;
@@ -122,7 +123,7 @@ typedef struct mgfx_scene {
     mx_arena allocator;
 } mgfx_scene;
 
-typedef enum gltf_loader_flags : uint8_t {
+typedef enum gltf_loader_flags {
     gltf_loader_flag_textures = 1 << 0,
     gltf_loader_flag_materials = 1 << 1,
     gltf_loader_flag_meshes = 1 << 2,

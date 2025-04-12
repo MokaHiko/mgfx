@@ -21,7 +21,7 @@ typedef MX_API struct {
  * @param info pointer to an `mgfx_init_info` struct containing initialization parameters.
  * @return mgfx_success (0) if successful, or an error code otherwise.
  */
-MX_API [[nodiscard]] int mgfx_init(const mgfx_init_info* info);
+MX_API MX_NO_DISCARD int mgfx_init(const mgfx_init_info* info);
 
 MX_API void mgfx_frame();
 
@@ -99,37 +99,37 @@ MGFX_HANDLE(mgfx_th)
  * @brief Renders debug text on the backbuffer.
  * @note Must be called on main draw loop.
  */
-MX_API void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
+MX_API MX_NO_DISCARD void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
 
-MX_API [[nodiscard]] mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
 
-MX_API [[nodiscard]] mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len);
-MX_API [[nodiscard]] mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len);
 
 MX_API void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t size, size_t offset);
 MX_API void mgfx_buffer_destroy(uint64_t buffer_idx);
 
-MX_API [[nodiscard]] mgfx_sh mgfx_shader_create(const char* path);
+MX_API MX_NO_DISCARD mgfx_sh mgfx_shader_create(const char* path);
 MX_API void mgfx_shader_destroy(mgfx_sh sh);
 
-MX_API [[nodiscard]] mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
-MX_API [[nodiscard]] mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
+MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
+MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
 MX_API void mgfx_program_destroy(mgfx_ph ph);
 
-MX_API [[nodiscard]] mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage);
+MX_API MX_NO_DISCARD mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage);
 MX_API void mgfx_image_destroy(mgfx_imgh imgh);
 
-MX_API [[nodiscard]] mgfx_th
+MX_API MX_NO_DISCARD mgfx_th
 mgfx_texture_create_from_memory(const mgfx_image_info* info, uint32_t filter, void* data, size_t len);
-MX_API [[nodiscard]] mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter);
+MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter);
 MX_API void mgfx_texture_destroy(mgfx_th th, mx_bool release_image);
 
-MX_API [[nodiscard]] mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
+MX_API MX_NO_DISCARD mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
                                                       uint32_t color_attachment_count,
                                                       mgfx_imgh depth_attachment);
 MX_API void mgfx_framebuffer_destroy(mgfx_fbh fbh);
 
-MX_API [[nodiscard]] mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type);
+MX_API MX_NO_DISCARD mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type);
 MX_API void mgfx_descriptor_destroy(mgfx_dh dh);
 
 MX_API void mgfx_set_buffer(mgfx_dh dh, mgfx_ubh ubh);

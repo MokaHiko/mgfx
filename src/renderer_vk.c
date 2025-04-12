@@ -439,6 +439,11 @@ int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count,
         MX_LOG_TRACE("- deviceID: 0x%X", physical_device_props->deviceID);
         MX_LOG_TRACE("- deviceType: %d", physical_device_props->deviceType);
 
+        if(physical_device_props->deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            *phys_device = physical_devices[i];
+            return MGFX_SUCCESS;
+        }
+
         MX_LOG_TRACE("- limits:");
         MX_LOG_TRACE(" - maxImageDimension2D: %d ",
                     physical_device_props->limits.maxImageDimension2D);

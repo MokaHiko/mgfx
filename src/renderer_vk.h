@@ -11,18 +11,26 @@
 
 #include "mgfx/defines.h"
 
-#ifdef MX_DEBUG
-#define VK_CHECK(call)                                                                                       \
-    do {                                                                                                     \
-        VkResult result = (call);                                                                            \
-        if (result != VK_SUCCESS) {                                                                          \
-            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);                   \
-            __builtin_trap();                                                                                \
-        }                                                                                                    \
+#ifdef _MSC_VER
+#define VK_CHECK(call)                                                                                    \
+    do {                                                                                                   \
+        VkResult result = (call);                                                                          \
+        if (result != VK_SUCCESS) {                                                                        \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);                 \
+            __debugbreak();                                                                                \
+        }                                                                                                  \
     } while (0)
 #else
-#define VK_CHECK(call) (call)
+#define VK_CHECK(call)                                                                                    \
+    do {                                                                                                   \
+        VkResult result = (call);                                                                          \
+        if (result != VK_SUCCESS) {                                                                        \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);                 \
+            __builtin_trap();                                                                              \
+        }                                                                                                  \
+    } while (0)
 #endif
+
 
 uint32_t vk_format_size(VkFormat format);
 

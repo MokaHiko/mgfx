@@ -102,7 +102,8 @@ static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scen
         glm_translate(scene_node->matrix, node->translation);
 
         mat4 rotation_mtx;
-        glm_quat_mat4(node->rotation, rotation_mtx);
+        glm_mat4_identity(rotation_mtx);
+        //glm_quat_mat4(node->rotation, rotation_mtx);
         glm_mat4_mul(scene_node->matrix, rotation_mtx, scene_node->matrix);
 
         glm_scale(scene_node->matrix, node->scale);
@@ -119,6 +120,7 @@ static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scen
     }
 };
 
+#define MGFX_MAX_DIR_LEN 256
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene) {
     cgltf_options options = {0};
     cgltf_data* data = NULL;
@@ -146,7 +148,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
     const char* file_name = strrchr(path, '/');
     const size_t dir_len = file_name - path;
-    char dir_name[strlen(path) + 2];
+    char dir_name[MGFX_MAX_DIR_LEN];
     strncpy(dir_name, path, dir_len);
     dir_name[dir_len] = '/';
     dir_name[dir_len + 1] = '\0';
@@ -177,7 +179,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
-                        char absolute_path[strlen(path) + strlen(data->textures[tex_idx].image->uri) + 1];
+                        char absolute_path[MGFX_MAX_DIR_LEN];
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
@@ -209,7 +211,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
-                        char absolute_path[strlen(path) + strlen(data->textures[tex_idx].image->uri) + 1];
+                        char absolute_path[MGFX_MAX_DIR_LEN];
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
@@ -228,7 +230,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
-                        char absolute_path[strlen(path) + strlen(data->textures[tex_idx].image->uri) + 1];
+                        char absolute_path[MGFX_MAX_DIR_LEN];
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
@@ -247,7 +249,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
-                        char absolute_path[strlen(path) + strlen(data->textures[tex_idx].image->uri) + 1];
+                        char absolute_path[MGFX_MAX_DIR_LEN];
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
@@ -266,7 +268,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
-                        char absolute_path[strlen(path) + strlen(data->textures[tex_idx].image->uri) + 1];
+                        char absolute_path[MGFX_MAX_DIR_LEN];
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
@@ -392,7 +394,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                 mesh_primitive->indices =
                     mx_arena_push(&scene->allocator, primitive->indices->count * sizeof(uint32_t));
 
-                void* idx_buffer = primitive->indices->buffer_view->buffer->data +
+                uint8_t* idx_buffer = (uint8_t*)primitive->indices->buffer_view->buffer->data +
                                    primitive->indices->buffer_view->offset + primitive->indices->offset;
 
                 if (primitive->indices->component_type == cgltf_component_type_r_16u) {
@@ -463,7 +465,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         exit(-1);
     }
 
-    mat4 identity = GLM_MAT4_IDENTITY;
+    mat4 identity;
+    glm_mat4_identity(identity);
     for (size_t root_idx = 0; root_idx < cgltf_scene->nodes_count; root_idx++) {
         gltf_process_node(data, identity, scene, cgltf_scene->nodes[root_idx]);
     };

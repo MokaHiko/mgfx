@@ -257,7 +257,7 @@ void editor_update(camera* cam) {
     glm_normalize(direction);
     glm_vec3_copy(direction, cam->forward);
 
-    vec3 input = GLM_VEC3_ZERO;
+    vec3 input = {0, 0, 0};
     if (mgfx_get_key(GLFW_KEY_W) == MX_TRUE) {
         glm_vec3_add(input, cam->forward, input);
     }
