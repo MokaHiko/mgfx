@@ -106,7 +106,18 @@ void mgfx_example_update() {
         mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
     }
 
-    mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], (mx_vec3){0.0f, 0.0f, 0.0f} , NULL, NULL);
+    // Profiler
+    static float last_value = 0.0f;
+    float cur_value = MGFX_TIME_DELTA_TIME;
+    float epsilon = 0.01f;
+
+    if (fabsf(cur_value - last_value) > epsilon) {
+        last_value = cur_value;
+    }
+
+    mgfx_debug_draw_text(0, 0, "delta time: %.2f s", last_value * 1000.0f);
+
+    //mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], (mx_vec3){0.0f, 0.0f, 0.0f} , NULL, NULL);
 }
 
 void mgfx_example_shutdown() {

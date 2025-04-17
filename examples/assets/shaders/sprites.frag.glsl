@@ -9,5 +9,9 @@ layout(location = 0) out vec4 frag_color;
 layout(set = 0, binding = 0) uniform sampler2D diffuse;
 
 void main() {
+	if(length(texture(diffuse, v_uv).r) < 0.0001) {
+		discard;
+	}
+
 	frag_color = texture(diffuse, v_uv);
 }

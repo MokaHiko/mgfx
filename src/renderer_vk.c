@@ -404,10 +404,12 @@ VkResult get_window_surface_vk(VkInstance instance, void* nwh, VkSurfaceKHR* sur
     return glfwCreateWindowSurface(instance, window, NULL, surface);
 }
 
-int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count,
+int choose_physical_device_vk(VkInstance instance,
+                              uint32_t device_ext_count,
                               const char** device_exts,
                               VkPhysicalDeviceProperties* physical_device_props,
-                              VkPhysicalDevice* phys_device, mx_arena* arena) {
+                              VkPhysicalDevice* phys_device,
+                              mx_arena* arena) {
     uint32_t physical_device_count = 0;
     vkEnumeratePhysicalDevices(instance, &physical_device_count, NULL);
 
@@ -427,118 +429,102 @@ int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count,
 
         MX_LOG_TRACE("- deviceName : %s", physical_device_props->deviceName);
         MX_LOG_TRACE("- apiVersion : %d.%d.%d",
-                    VK_API_VERSION_MAJOR(physical_device_props->apiVersion),
-                    VK_API_VERSION_MINOR(physical_device_props->apiVersion),
-                    VK_API_VERSION_PATCH(physical_device_props->apiVersion));
+                     VK_API_VERSION_MAJOR(physical_device_props->apiVersion),
+                     VK_API_VERSION_MINOR(physical_device_props->apiVersion),
+                     VK_API_VERSION_PATCH(physical_device_props->apiVersion));
         MX_LOG_TRACE("- driverVersion : %d.%d.%d",
-                    VK_API_VERSION_MAJOR(physical_device_props->driverVersion),
-                    VK_API_VERSION_MINOR(physical_device_props->driverVersion),
-                    VK_API_VERSION_PATCH(physical_device_props->driverVersion));
+                     VK_API_VERSION_MAJOR(physical_device_props->driverVersion),
+                     VK_API_VERSION_MINOR(physical_device_props->driverVersion),
+                     VK_API_VERSION_PATCH(physical_device_props->driverVersion));
 
         MX_LOG_TRACE("- vendorID: 0x%X", physical_device_props->vendorID);
         MX_LOG_TRACE("- deviceID: 0x%X", physical_device_props->deviceID);
         MX_LOG_TRACE("- deviceType: %d", physical_device_props->deviceType);
 
-        if(physical_device_props->deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        if (physical_device_props->deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             *phys_device = physical_devices[i];
             return MGFX_SUCCESS;
         }
 
+#ifdef MX_LOG_LEVEL_TRACE
         MX_LOG_TRACE("- limits:");
-        MX_LOG_TRACE(" - maxImageDimension2D: %d ",
-                    physical_device_props->limits.maxImageDimension2D);
-        MX_LOG_TRACE(" - maxImageDimension3D: %d ",
-                    physical_device_props->limits.maxImageDimension3D);
-        MX_LOG_TRACE(" - maxImageArrayLayers: %d ",
-                    physical_device_props->limits.maxImageArrayLayers);
-        MX_LOG_TRACE(" - maxTexelBufferElements: %d ",
-                    physical_device_props->limits.maxTexelBufferElements);
-        MX_LOG_TRACE(" - maxUniformBufferRange: %d ",
-                    physical_device_props->limits.maxUniformBufferRange);
-        MX_LOG_TRACE(" - maxStorageBufferRange: %d ",
-                    physical_device_props->limits.maxStorageBufferRange);
+        MX_LOG_TRACE(" - maxImageDimension2D: %d ", physical_device_props->limits.maxImageDimension2D);
+        MX_LOG_TRACE(" - maxImageDimension3D: %d ", physical_device_props->limits.maxImageDimension3D);
+        MX_LOG_TRACE(" - maxImageArrayLayers: %d ", physical_device_props->limits.maxImageArrayLayers);
+        MX_LOG_TRACE(" - maxTexelBufferElements: %d ", physical_device_props->limits.maxTexelBufferElements);
+        MX_LOG_TRACE(" - maxUniformBufferRange: %d ", physical_device_props->limits.maxUniformBufferRange);
+        MX_LOG_TRACE(" - maxStorageBufferRange: %d ", physical_device_props->limits.maxStorageBufferRange);
 
-        MX_LOG_TRACE(" - maxPushConstantsSize: %d ",
-                    physical_device_props->limits.maxPushConstantsSize);
+        MX_LOG_TRACE(" - maxPushConstantsSize: %d ", physical_device_props->limits.maxPushConstantsSize);
         MX_LOG_TRACE(" - maxMemoryAllocationCount: %d ",
-                    physical_device_props->limits.maxMemoryAllocationCount);
+                     physical_device_props->limits.maxMemoryAllocationCount);
         MX_LOG_TRACE(" - maxSamplerAllocationCount: %d ",
-                    physical_device_props->limits.maxSamplerAllocationCount);
-        MX_LOG_TRACE(" - maxBoundDescriptorSets: %d ",
-                    physical_device_props->limits.maxBoundDescriptorSets);
+                     physical_device_props->limits.maxSamplerAllocationCount);
+        MX_LOG_TRACE(" - maxBoundDescriptorSets: %d ", physical_device_props->limits.maxBoundDescriptorSets);
         MX_LOG_TRACE(" - maxPerStageDescriptorSamplers: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorSamplers);
+                     physical_device_props->limits.maxPerStageDescriptorSamplers);
         MX_LOG_TRACE(" - maxPerStageDescriptorUniformBuffers: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorUniformBuffers);
+                     physical_device_props->limits.maxPerStageDescriptorUniformBuffers);
         MX_LOG_TRACE(" - maxPerStageDescriptorStorageBuffers: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorStorageBuffers);
+                     physical_device_props->limits.maxPerStageDescriptorStorageBuffers);
         MX_LOG_TRACE(" - maxPerStageDescriptorSampledImages: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorSampledImages);
+                     physical_device_props->limits.maxPerStageDescriptorSampledImages);
         MX_LOG_TRACE(" - maxPerStageDescriptorStorageImages: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorStorageImages);
+                     physical_device_props->limits.maxPerStageDescriptorStorageImages);
         MX_LOG_TRACE(" - maxPerStageDescriptorInputAttachments: %d ",
-                    physical_device_props->limits.maxPerStageDescriptorInputAttachments);
-        MX_LOG_TRACE(" - maxPerStageResources: %d ",
-                    physical_device_props->limits.maxPerStageResources);
+                     physical_device_props->limits.maxPerStageDescriptorInputAttachments);
+        MX_LOG_TRACE(" - maxPerStageResources: %d ", physical_device_props->limits.maxPerStageResources);
         MX_LOG_TRACE(" - maxDescriptorSetSamplers: %d ",
-                    physical_device_props->limits.maxDescriptorSetSamplers);
+                     physical_device_props->limits.maxDescriptorSetSamplers);
         MX_LOG_TRACE(" - maxDescriptorSetUniformBuffers: %d ",
-                    physical_device_props->limits.maxDescriptorSetUniformBuffers);
+                     physical_device_props->limits.maxDescriptorSetUniformBuffers);
         MX_LOG_TRACE(" - maxDescriptorSetUniformBuffersDynamic: %d ",
-                    physical_device_props->limits.maxDescriptorSetUniformBuffersDynamic);
+                     physical_device_props->limits.maxDescriptorSetUniformBuffersDynamic);
         MX_LOG_TRACE(" - maxDescriptorSetStorageBuffers: %d ",
-                    physical_device_props->limits.maxDescriptorSetStorageBuffers);
+                     physical_device_props->limits.maxDescriptorSetStorageBuffers);
         MX_LOG_TRACE(" - maxDescriptorSetStorageBuffersDynamic: %d ",
-                    physical_device_props->limits.maxDescriptorSetStorageBuffersDynamic);
+                     physical_device_props->limits.maxDescriptorSetStorageBuffersDynamic);
         MX_LOG_TRACE(" - maxDescriptorSetSampledImages: %d ",
-                    physical_device_props->limits.maxDescriptorSetSampledImages);
+                     physical_device_props->limits.maxDescriptorSetSampledImages);
         MX_LOG_TRACE(" - maxDescriptorSetStorageImages: %d ",
-                    physical_device_props->limits.maxDescriptorSetStorageImages);
+                     physical_device_props->limits.maxDescriptorSetStorageImages);
         MX_LOG_TRACE(" - maxDescriptorSetInputAttachments: %d ",
-                    physical_device_props->limits.maxDescriptorSetInputAttachments);
+                     physical_device_props->limits.maxDescriptorSetInputAttachments);
         MX_LOG_TRACE(" - maxVertexInputAttributes: %d ",
-                    physical_device_props->limits.maxVertexInputAttributes);
-        MX_LOG_TRACE(" - maxVertexInputBindings: %d ",
-                    physical_device_props->limits.maxVertexInputBindings);
+                     physical_device_props->limits.maxVertexInputAttributes);
+        MX_LOG_TRACE(" - maxVertexInputBindings: %d ", physical_device_props->limits.maxVertexInputBindings);
         MX_LOG_TRACE(" - maxVertexOutputComponents: %d ",
-                    physical_device_props->limits.maxVertexOutputComponents);
+                     physical_device_props->limits.maxVertexOutputComponents);
         MX_LOG_TRACE(" - maxFragmentInputComponents: %d ",
-                    physical_device_props->limits.maxFragmentInputComponents);
+                     physical_device_props->limits.maxFragmentInputComponents);
         MX_LOG_TRACE(" - maxFragmentOutputAttachments: %d ",
-                    physical_device_props->limits.maxFragmentOutputAttachments);
+                     physical_device_props->limits.maxFragmentOutputAttachments);
         MX_LOG_TRACE(" - maxFragmentCombinedOutputResources: %d ",
-                    physical_device_props->limits.maxFragmentCombinedOutputResources);
+                     physical_device_props->limits.maxFragmentCombinedOutputResources);
         MX_LOG_TRACE(" - maxComputeSharedMemorySize: %d ",
-                    physical_device_props->limits.maxComputeSharedMemorySize);
+                     physical_device_props->limits.maxComputeSharedMemorySize);
         MX_LOG_TRACE(" - maxComputeWorkGroupInvocations: %d ",
-                    physical_device_props->limits.maxComputeWorkGroupInvocations);
+                     physical_device_props->limits.maxComputeWorkGroupInvocations);
         MX_LOG_TRACE(" - maxDrawIndexedIndexValue: %d ",
-                    physical_device_props->limits.maxDrawIndexedIndexValue);
-        MX_LOG_TRACE(" - maxDrawIndirectCount: %d ",
-                    physical_device_props->limits.maxDrawIndirectCount);
+                     physical_device_props->limits.maxDrawIndexedIndexValue);
+        MX_LOG_TRACE(" - maxDrawIndirectCount: %d ", physical_device_props->limits.maxDrawIndirectCount);
         MX_LOG_TRACE(" - maxViewportDimensions: %d x %d ",
-                    physical_device_props->limits.maxViewportDimensions[0],
-                    physical_device_props->limits.maxViewportDimensions[1]);
+                     physical_device_props->limits.maxViewportDimensions[0],
+                     physical_device_props->limits.maxViewportDimensions[1]);
         MX_LOG_TRACE(" - viewportBoundsRange: %f x %.f",
-                    physical_device_props->limits.viewportBoundsRange[0],
-                    physical_device_props->limits.viewportBoundsRange[1]);
-        MX_LOG_TRACE(" - viewportSubPixelBits: %d ",
-                    physical_device_props->limits.viewportSubPixelBits);
-        MX_LOG_TRACE(" - minMemoryMapAlignment: %zu ",
-                    physical_device_props->limits.minMemoryMapAlignment);
-        MX_LOG_TRACE(" - maxFramebufferWidth: %d ",
-                    physical_device_props->limits.maxFramebufferWidth);
-        MX_LOG_TRACE(" - maxFramebufferHeight: %d ",
-                    physical_device_props->limits.maxFramebufferHeight);
-        MX_LOG_TRACE(" - maxFramebufferLayers: %d ",
-                    physical_device_props->limits.maxFramebufferLayers);
+                     physical_device_props->limits.viewportBoundsRange[0],
+                     physical_device_props->limits.viewportBoundsRange[1]);
+        MX_LOG_TRACE(" - viewportSubPixelBits: %d ", physical_device_props->limits.viewportSubPixelBits);
+        MX_LOG_TRACE(" - minMemoryMapAlignment: %zu ", physical_device_props->limits.minMemoryMapAlignment);
+        MX_LOG_TRACE(" - maxFramebufferWidth: %d ", physical_device_props->limits.maxFramebufferWidth);
+        MX_LOG_TRACE(" - maxFramebufferHeight: %d ", physical_device_props->limits.maxFramebufferHeight);
+        MX_LOG_TRACE(" - maxFramebufferLayers: %d ", physical_device_props->limits.maxFramebufferLayers);
         MX_LOG_TRACE(" - framebufferColorSampleCounts: %d ",
-                    physical_device_props->limits.framebufferColorSampleCounts);
+                     physical_device_props->limits.framebufferColorSampleCounts);
         MX_LOG_TRACE(" - framebufferDepthSampleCounts: %d ",
-                    physical_device_props->limits.framebufferDepthSampleCounts);
-        MX_LOG_TRACE(" - maxColorAttachments: %d ",
-                    physical_device_props->limits.maxColorAttachments);
-
+                     physical_device_props->limits.framebufferDepthSampleCounts);
+        MX_LOG_TRACE(" - maxColorAttachments: %d ", physical_device_props->limits.maxColorAttachments);
+#endif
         vkGetPhysicalDeviceFeatures(physical_devices[i], &physical_device_features);
 
         uint32_t avail_ext_count = 0;
@@ -547,14 +533,12 @@ int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count,
         VkExtensionProperties* avail_ext_props =
             mx_arena_push(arena, avail_ext_count * sizeof(VkExtensionProperties));
 
-        vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &avail_ext_count,
-                                             avail_ext_props);
+        vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &avail_ext_count, avail_ext_props);
 
         int validated_device_ext_count = 0;
         for (uint32_t req_ext_idx = 0; req_ext_idx < device_ext_count; req_ext_idx++) {
             for (int avail_ext_idx = 0; avail_ext_idx < avail_ext_count; avail_ext_idx++) {
-                if (strcmp(device_exts[req_ext_idx],
-                           avail_ext_props[avail_ext_idx].extensionName) == 0) {
+                if (strcmp(device_exts[req_ext_idx], avail_ext_props[avail_ext_idx].extensionName) == 0) {
                     ++validated_device_ext_count;
                     continue;
                 }
@@ -570,8 +554,7 @@ int choose_physical_device_vk(VkInstance instance, uint32_t device_ext_count,
     return MGFX_SUCCESS;
 }
 
-void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, void* nwh,
-                                VkExtent2D* extent) {
+void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, void* nwh, VkExtent2D* extent) {
     if (surface_caps->currentExtent.width != UINT32_MAX) {
         *extent = surface_caps->currentExtent;
     } else {
@@ -579,21 +562,21 @@ void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, vo
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
 
-        width =
-            mx_clampf(width, surface_caps->minImageExtent.width, surface_caps->maxImageExtent.width);
-        height = mx_clampf(height, surface_caps->minImageExtent.height,
-                        surface_caps->maxImageExtent.height);
+        width = mx_clampf(width, surface_caps->minImageExtent.width, surface_caps->maxImageExtent.width);
+        height = mx_clampf(height, surface_caps->minImageExtent.height, surface_caps->maxImageExtent.height);
 
-        extent->width  = width;
+        extent->width = width;
         extent->height = height;
     }
 };
 
-void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspectFlags aspect_flags,
+void vk_cmd_transition_image(VkCommandBuffer cmd,
+                             image_vk* image,
+                             VkImageAspectFlags aspect_flags,
                              VkImageLayout new_layout) {
     VkImageMemoryBarrier img_barrier = {
-        .sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .pNext         = NULL,
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = NULL,
         .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
         .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
 
@@ -602,11 +585,11 @@ void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspect
         .image = image->handle,
         .subresourceRange =
             {
-                .aspectMask     = aspect_flags,
-                .baseMipLevel   = 0,
-                .levelCount     = VK_REMAINING_MIP_LEVELS,
+                .aspectMask = aspect_flags,
+                .baseMipLevel = 0,
+                .levelCount = VK_REMAINING_MIP_LEVELS,
                 .baseArrayLayer = 0,
-                .layerCount     = VK_REMAINING_ARRAY_LAYERS,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
             },
     };
 
@@ -614,61 +597,71 @@ void vk_cmd_transition_image(VkCommandBuffer cmd, image_vk* image, VkImageAspect
                          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, // src stage mask
                          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, // dst stage mask
                          0,                                  // dependency flag
-                         0, NULL, 0, NULL, 1, &img_barrier);
+                         0,
+                         NULL,
+                         0,
+                         NULL,
+                         1,
+                         &img_barrier);
 
     image->layout = new_layout;
 }
 
-void vk_cmd_copy_image_to_image(VkCommandBuffer cmd, const image_vk* src, VkImageAspectFlags aspect,
+void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
+                                const image_vk* src,
+                                VkImageAspectFlags aspect,
                                 image_vk* dst) {
     VkImageBlit blit = {
         .srcSubresource =
             {
-                .aspectMask     = aspect,
-                .mipLevel       = 0,
+                .aspectMask = aspect,
+                .mipLevel = 0,
                 .baseArrayLayer = 0,
-                .layerCount     = 1,
+                .layerCount = 1,
             },
         .srcOffsets = {{}, {src->extent.width, src->extent.height, 1.0f}},
         .dstSubresource =
             {
-                .aspectMask     = aspect,
-                .mipLevel       = 0,
+                .aspectMask = aspect,
+                .mipLevel = 0,
                 .baseArrayLayer = 0,
-                .layerCount     = 1,
+                .layerCount = 1,
             },
         {{}, {dst->extent.width, dst->extent.height, 1.0f}},
     };
 
-    vkCmdBlitImage(cmd, src->handle, src->layout, dst->handle, dst->layout, 1, &blit,
-                   VK_FILTER_LINEAR);
+    vkCmdBlitImage(cmd, src->handle, src->layout, dst->handle, dst->layout, 1, &blit, VK_FILTER_LINEAR);
 };
 
-void vk_cmd_clear_image(VkCommandBuffer cmd, image_vk* target, const VkImageSubresourceRange* range,
+void vk_cmd_clear_image(VkCommandBuffer cmd,
+                        image_vk* target,
+                        const VkImageSubresourceRange* range,
                         const VkClearColorValue* clear) {
     vkCmdClearColorImage(cmd, target->handle, target->layout, clear, 1, range);
 }
 
 void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
-    int width  = 0;
+    int width = 0;
     int height = 0;
 
     if (fb->color_attachment_count > 0) {
-        width  = fb->color_attachments[0]->extent.width;
+        width = fb->color_attachments[0]->extent.width;
         height = fb->color_attachments[0]->extent.height;
     } else if (fb->depth_attachment) {
-        width  = fb->depth_attachment->extent.width;
+        width = fb->depth_attachment->extent.width;
         height = fb->depth_attachment->extent.height;
     } else {
     }
 
     for (uint32_t i = 0; i < fb->color_attachment_count; i++) {
-        vk_cmd_transition_image(cmd, fb->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT,
-                                VK_IMAGE_LAYOUT_GENERAL);
+        vk_cmd_transition_image(
+            cmd, fb->color_attachments[i], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL);
     }
 
     if (fb->depth_attachment) {
-        vk_cmd_transition_image(cmd, fb->depth_attachment, VK_IMAGE_ASPECT_DEPTH_BIT,
+        vk_cmd_transition_image(cmd,
+                                fb->depth_attachment,
+                                VK_IMAGE_ASPECT_DEPTH_BIT,
                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
@@ -676,21 +669,21 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
 
     for (uint32_t i = 0; i < fb->color_attachment_count; i++) {
         color_attachment_infos[i] = (VkRenderingAttachmentInfo){
-            .sType              = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .pNext              = NULL,
-            .imageView          = fb->color_attachment_views[i],
-            .imageLayout        = fb->color_attachments[i]->layout,
-            .resolveMode        = VK_RESOLVE_MODE_NONE,
-            .resolveImageView   = VK_NULL_HANDLE,
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .pNext = NULL,
+            .imageView = fb->color_attachment_views[i],
+            .imageLayout = fb->color_attachments[i]->layout,
+            .resolveMode = VK_RESOLVE_MODE_NONE,
+            .resolveImageView = VK_NULL_HANDLE,
             .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .loadOp             = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp            = VK_ATTACHMENT_STORE_OP_STORE,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         };
     }
 
     VkRenderingAttachmentInfo depth_attachment_info = {
-        .sType     = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .pNext     = NULL,
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .pNext = NULL,
         .imageView = fb->depth_attachment_view,
         .imageLayout = fb->depth_attachment ? fb->depth_attachment->layout : VK_IMAGE_LAYOUT_UNDEFINED,
         .resolveMode = VK_RESOLVE_MODE_NONE,
@@ -698,28 +691,28 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
         .resolveImageLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = { .depthStencil = {.depth = 1.0f, .stencil = 0} }
-    };
+        .clearValue = {.depthStencil = {.depth = 1.0f, .stencil = 0}}};
 
     VkRenderingInfo rendering_info = {
-        .sType                = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .pNext                = NULL,
-        .flags                = 0,
-        .renderArea           = {.offset = {0, 0}, .extent = {width, height}},
-        .layerCount           = 1,
-        .viewMask             = 0,
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .renderArea = {.offset = {0, 0}, .extent = {width, height}},
+        .layerCount = 1,
+        .viewMask = 0,
         .colorAttachmentCount = fb->color_attachment_count,
-        .pColorAttachments    = color_attachment_infos,
-        .pDepthAttachment     = &depth_attachment_info,
-        .pStencilAttachment   = NULL,
+        .pColorAttachments = color_attachment_infos,
+        .pDepthAttachment = &depth_attachment_info,
+        .pStencilAttachment = NULL,
     };
 
     vk_cmd_begin_rendering_khr(cmd, &rendering_info);
 
     VkViewport view_port = {
-        .x = 0, .y = 0,
-        .width    = width,
-        .height   = height,
+        .x = 0,
+        .y = 0,
+        .width = width,
+        .height = height,
         .minDepth = 0.0f,
         .maxDepth = 1.0f,
     };

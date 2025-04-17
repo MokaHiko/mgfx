@@ -92,7 +92,6 @@ static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scen
     }
 
     const size_t vertex_size = scene->vl->stride;
-
     mgfx_node* scene_node = &scene->nodes[scene->node_count++];
 
     if (node->has_matrix) {
@@ -103,7 +102,10 @@ static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scen
 
         mat4 rotation_mtx;
         glm_mat4_identity(rotation_mtx);
-        //glm_quat_mat4(node->rotation, rotation_mtx);
+
+#ifdef MX_MACOS
+        glm_quat_mat4(node->rotation, rotation_mtx);
+#endif
         glm_mat4_mul(scene_node->matrix, rotation_mtx, scene_node->matrix);
 
         glm_scale(scene_node->matrix, node->scale);
@@ -183,9 +185,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
-                        scene->textures[tex_idx] =
-                            load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
-                        MX_LOG_SUCCESS("Texture loaded: %s (%u mb)!", data->textures[tex_idx].image->uri);
+                        scene->textures[tex_idx] = load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].albedo_texture = scene->textures[tex_idx];
@@ -217,7 +217,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
-                        MX_LOG_SUCCESS("Texture loaded: %s (%u mb)!", data->textures[tex_idx].image->uri);
                     }
 
                     scene->materials[i].metallic_roughness_texture = scene->textures[tex_idx];
@@ -236,7 +235,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
-                        MX_LOG_SUCCESS("Texture loaded: %s (%u mb)!", data->textures[tex_idx].image->uri);
                     }
 
                     scene->materials[i].normal_texture = scene->textures[tex_idx];
@@ -255,7 +253,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
-                        MX_LOG_SUCCESS("Texture loaded: %s (%u mb)!", data->textures[tex_idx].image->uri);
                     }
 
                     scene->materials[i].occlusion_texture = scene->textures[tex_idx];
@@ -272,9 +269,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
-                        scene->textures[tex_idx] =
-                            load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
-                        MX_LOG_SUCCESS("Texture loaded: %s (%u mb)!", data->textures[tex_idx].image->uri);
+                        scene->textures[tex_idx] = load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].emissive_texture = scene->textures[tex_idx];
@@ -395,7 +390,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     mx_arena_push(&scene->allocator, primitive->indices->count * sizeof(uint32_t));
 
                 uint8_t* idx_buffer = (uint8_t*)primitive->indices->buffer_view->buffer->data +
-                                   primitive->indices->buffer_view->offset + primitive->indices->offset;
+                                      primitive->indices->buffer_view->offset + primitive->indices->offset;
 
                 if (primitive->indices->component_type == cgltf_component_type_r_16u) {
                     for (int i = 0; i < primitive->indices->count; i++) {
@@ -476,22 +471,28 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             mgfx_material* mat = &scene->materials[mat_idx];
 
             mat->properties_buffer = mgfx_uniform_buffer_create(&mat->properties, sizeof(mat->properties));
-            mat->u_properties_buffer = mgfx_descriptor_create("u_properties_buffer", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            mat->u_properties_buffer =
+                mgfx_descriptor_create("u_properties_buffer", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
             mgfx_set_buffer(mat->u_properties_buffer, mat->properties_buffer);
 
-            mat->u_albedo_texture = mgfx_descriptor_create("u_albedo_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_albedo_texture =
+                mgfx_descriptor_create("u_albedo_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_albedo_texture, mat->albedo_texture);
 
-            mat->u_metallic_roughness_texture = mgfx_descriptor_create("u_metallic_roughness_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_metallic_roughness_texture = mgfx_descriptor_create(
+                "u_metallic_roughness_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_metallic_roughness_texture, mat->metallic_roughness_texture);
 
-            mat->u_normal_texture = mgfx_descriptor_create("u_normal_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_normal_texture =
+                mgfx_descriptor_create("u_normal_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_normal_texture, mat->normal_texture);
 
-            mat->u_occlusion_texture = mgfx_descriptor_create("u_occlusion_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_occlusion_texture =
+                mgfx_descriptor_create("u_occlusion_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_occlusion_texture, mat->occlusion_texture);
 
-            mat->u_emissive_texture = mgfx_descriptor_create("u_emissive_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_emissive_texture =
+                mgfx_descriptor_create("u_emissive_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_emissive_texture, mat->emissive_texture);
         }
     }

@@ -41,13 +41,13 @@ add_executable(text_rendering text_rendering/text_rendering.c)
 target_link_libraries(text_rendering PRIVATE ex_common)
 
 add_library(gltf_loader gltf_loading/gltf_loader.c)
-target_link_libraries(gltf_loader PRIVATE ex_common)
+target_link_libraries(gltf_loader PUBLIC ex_common)
 
 add_executable(gltf_loading gltf_loading/gltf_loading.c)
-target_link_libraries(gltf_loading PRIVATE ex_common gltf_loader)
+target_link_libraries(gltf_loading PRIVATE gltf_loader)
 
 add_executable(shadows shadows/shadows.c)
-target_link_libraries(shadows PRIVATE ex_common gltf_loader)
+target_link_libraries(shadows PRIVATE gltf_loader)
 
 set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gradient.comp.glsl

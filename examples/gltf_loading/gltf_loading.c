@@ -165,6 +165,21 @@ void mgfx_example_update() {
     mgfx_bind_descriptor(0, u_color_fba);
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
+
+    // Profiler
+    static float last_value = 0.0f;
+    float cur_value = MGFX_TIME_DELTA_TIME;
+
+    static float time = 0.0f;
+    float period = 0.10f;
+
+    if (time > period) {
+        time = 0.0f;
+        last_value = cur_value;
+    }
+    time += MGFX_TIME_DELTA_TIME;
+
+    mgfx_debug_draw_text(0, 0, "delta time: %.2f ms", last_value * 1000.0f);
 }
 
 void mgfx_example_shutdown() {

@@ -69,7 +69,7 @@ MGFX_HANDLE(mgfx_ubh)
 /**
  * @@brief Handle for Transient buffer.
  */
-MGFX_HANDLE(mgfx_tbh)
+/*MGFX_HANDLE(mgfx_tbh)*/
 
 /** @brief Descriptor handle */
 MGFX_HANDLE(mgfx_dh)
@@ -99,7 +99,7 @@ MGFX_HANDLE(mgfx_th)
  * @brief Renders debug text on the backbuffer.
  * @note Must be called on main draw loop.
  */
-MX_API MX_NO_DISCARD void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
+MX_API void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
 
 MX_API MX_NO_DISCARD mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
 

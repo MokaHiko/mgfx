@@ -5,8 +5,8 @@
 
 #include <mx/mx_asserts.h>
 #include <mx/mx_file.h>
-#include <mx/mx_memory.h>
 #include <mx/mx_math_mtx.h>
+#include <mx/mx_memory.h>
 
 #include <mgfx/mgfx.h>
 
@@ -153,9 +153,10 @@ mgfx_th load_texture_2d_from_path(const char* path, VkFormat format) {
     stbi_uc* data = stbi_load(path, &width, &height, &channel_count, STBI_rgb_alpha);
 
     MX_ASSERT(data, "Texture at %s failed to load", path);
-
     MX_ASSERT(data != NULL, "[MGFX_EXAMPLES]: Failed to load texture!");
+
     size_t size = width * height * 4;
+    MX_LOG_SUCCESS("Texture loaded: %s (%.2f mb)!", path, (float)size / MX_MB);
 
     mgfx_image_info info = {
         .format = format,
@@ -342,7 +343,6 @@ int mgfx_example_app() {
     // Init gizmos
     MGFX_DEFAULT_CUBE_VBH = mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices));
     MGFX_DEFAULT_CUBE_IBH = mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
-
 
     MGFX_GIZMO_VSH = mgfx_shader_create("assets/shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create("assets/shaders/gizmos.frag.glsl.spv");

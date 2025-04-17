@@ -5,12 +5,14 @@
 
 #define MGFX_SUCCESS ((uint16_t)0)
 
+// TODO: Remove
 typedef enum mgfx_allocation_type {
     MGFX_ALLOCATION_TYPE_UNKNOWN = 0,
 
     MGFX_ALLOCATION_TYPE_PRIMARY = 1 << 0,
-    MGFX_ALLOCATION_TYPE_SLICE = 1 << 1,
-    MGFX_ALLOCATION_TYPE_POOL = 1 << 2,
+    MGFX_ALLOCATION_TYPE_POOL = 1 << 1,
+    MGFX_ALLOCATION_TYPE_SLICE = 1 << 2,
+    MGFX_ALLOCATION_TYPE_TRANSIENT = 1 << 3,
 } mgfx_allocation_type;
 
 enum { MGFX_SHADER_MAX_DESCRIPTOR_SET = 4 };
@@ -39,12 +41,10 @@ typedef MX_API struct mgfx_image_info {
 
 enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF };
 
-// TODO: Make internal
-typedef struct mgfx_buffer_slice {
+typedef struct mgfx_transient_buffer {
     uint32_t size;
     uint32_t offset;
     mx_ptr_t buffer_handle; // VkBuffer
-} mgfx_buffer_slice;
-typedef mgfx_buffer_slice mgfx_transient_buffer;
+} mgfx_transient_buffer;
 
 #endif
