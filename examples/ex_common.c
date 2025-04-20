@@ -62,7 +62,7 @@ typedef struct vertex {
     float color[4];
 } vertex;
 
-static vertex k_cube_vertices[] = {
+static mgfx_built_in_vertex k_cube_vertices[] = {
     // Front face
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
     {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
@@ -99,7 +99,7 @@ static vertex k_cube_vertices[] = {
     {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},   // Top-right
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}},  // Top-left
 };
-static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(vertex);
+static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(mgfx_built_in_vertex);
 
 static uint32_t k_cube_indices[] = {
     // Front face
@@ -213,14 +213,12 @@ void camera_create(mgfx_camera_type type, camera* cam) {
 
     switch (type) {
     case mgfx_camera_type_orthographic:
-        glm_ortho(-10.0f, 10.0f, -10.0f, 10.0f, 0.1f, 1000.0f, cam->proj);
+        glm_ortho(-15.0f, 15.0f, -15.0f, 15.0f, 0.1f, 1000.0f, cam->proj);
         break;
     case mgfx_camera_type_perspective:
-        glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 10000.0f, cam->proj);
+        glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 1000.0f, cam->proj);
         break;
     }
-
-    cam->proj[1][1] *= -1;
 
     cam->yaw = -90.0f;
     cam->pitch = 0.0f;
@@ -310,8 +308,6 @@ int mgfx_example_app() {
     glfwSetKeyCallback(s_window, key_callback);
     glfwSetCursorPosCallback(s_window, mouse_callback);
 
-    glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
     mgfx_init_info mgfx_info = {"Clear Screen", s_window};
 
     if (mgfx_init(&mgfx_info) != 0) {
@@ -346,7 +342,12 @@ int mgfx_example_app() {
 
     MGFX_GIZMO_VSH = mgfx_shader_create("assets/shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create("assets/shaders/gizmos.frag.glsl.spv");
-    MGFX_GIZMO_PH = mgfx_program_create_graphics(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH);
+
+    const mgfx_graphics_ex_create_info gizmo_gfx_info = {
+        .polygon_mode = VK_POLYGON_MODE_LINE,
+        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    MGFX_GIZMO_PH = mgfx_program_create_graphics_ex(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH, &gizmo_gfx_info);
 
     mgfx_example_init();
 
@@ -357,12 +358,19 @@ int mgfx_example_app() {
         MGFX_TIME_DELTA_TIME = MGFX_TIME - last_time;
         last_time = MGFX_TIME;
 
-        if (mgfx_get_key(GLFW_KEY_ESCAPE)) {
-            break;
+        if (mgfx_get_key(GLFW_KEY_LEFT_SHIFT)) {
+            glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            editor_update(&g_example_camera);
+
+            // TODO: Add quit ui button
+            if (mgfx_get_key(GLFW_KEY_ESCAPE)) {
+                break;
+            }
+        } else {
+            glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         }
 
         camera_update(&g_example_camera);
-        editor_update(&g_example_camera);
 
         mgfx_example_update();
 
@@ -403,6 +411,7 @@ void mgfx_gizmo_draw_cube(const float* view,
     mgfx_set_view(view);
 
     mx_mat4 transform = MX_MAT4_IDENTITY;
+    mx_translate(position, transform);
     mgfx_set_transform(transform);
 
     mgfx_bind_vertex_buffer(MGFX_DEFAULT_CUBE_VBH);

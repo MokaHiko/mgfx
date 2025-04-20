@@ -2,26 +2,10 @@
 
 #include <ex_common.h>
 
+#include <mx/mx_math.h>
+#include <mx/mx_math_mtx.h>
+
 #include <GLFW/glfw3.h>
-
-typedef struct Vertex {
-    float position[3];
-    float uv_x;
-    float normal[3];
-    float uv_y;
-    float color[4];
-} Vertex;
-
-static const Vertex k_quad_vertices[] = {
-    {{-1.0f, -1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
-    {{1.0f, -1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
-    {{1.0f, 1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
-    {{-1.0f, 1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}},
-};
-static const size_t k_quad_vertex_count = sizeof(k_quad_vertices) / sizeof(Vertex);
-
-static const uint32_t k_indices[] = {3, 2, 0, 2, 1, 0};
-static const size_t k_quad_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
 mgfx_imgh color_fba;
 mgfx_imgh depth_fba;
@@ -86,11 +70,11 @@ void mgfx_example_init() {
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &sponza);
 
     quad_vsh = mgfx_shader_create("assets/shaders/blit.vert.glsl.spv");
-    quad_fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
+    quad_fsh = mgfx_shader_create("assets/shaders/blit.frag.glsl.spv");
     blit_program = mgfx_program_create_graphics(quad_vsh, quad_fsh);
 
-    quad_vbh = mgfx_vertex_buffer_create(k_quad_vertices, sizeof(k_quad_vertices));
-    quad_ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
+    quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
+    quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     u_color_fba = mgfx_descriptor_create("u_diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     color_fba_texture = mgfx_texture_create_from_image(color_fba, VK_FILTER_NEAREST);
@@ -98,6 +82,23 @@ void mgfx_example_init() {
 }
 
 void mgfx_example_update() {
+    // Profiler
+    static float last_value = 0.0f;
+    float cur_value = MGFX_TIME_DELTA_TIME;
+
+    static float time = 0.0f;
+    float period = 0.15f;
+
+    if (time > period) {
+        time = 0.0f;
+        last_value = cur_value;
+    }
+
+    time += MGFX_TIME_DELTA_TIME;
+
+    mgfx_debug_draw_text(APP_WIDTH * 0.8f, APP_HEIGHT * 0.95f, "delta time: %.2f ms", last_value * 1000.0f);
+    mgfx_debug_draw_text(APP_WIDTH * 0.8f, APP_HEIGHT * 0.9f, "fps time: %.2f", 1.0f / last_value);
+
     for (uint32_t n = 0; n < sponza.node_count; n++) {
         if (sponza.nodes[n].mesh == NULL) {
             continue;
@@ -142,6 +143,7 @@ void mgfx_example_update() {
             }
 
             mgfx_set_proj(g_example_camera.proj[0]);
+
             mgfx_set_view(g_example_camera.view[0]);
             mgfx_set_transform(model[0]);
 
@@ -160,26 +162,15 @@ void mgfx_example_update() {
     }
 
     // Blit to backbuffer
+    mgfx_set_proj((mx_mat4)MX_MAT4_IDENTITY);
+    mgfx_set_view((mx_mat4)MX_MAT4_IDENTITY);
+    mgfx_set_transform((mx_mat4)MX_MAT4_IDENTITY);
+
     mgfx_bind_vertex_buffer(quad_vbh);
     mgfx_bind_index_buffer(quad_ibh);
     mgfx_bind_descriptor(0, u_color_fba);
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
-
-    // Profiler
-    static float last_value = 0.0f;
-    float cur_value = MGFX_TIME_DELTA_TIME;
-
-    static float time = 0.0f;
-    float period = 0.10f;
-
-    if (time > period) {
-        time = 0.0f;
-        last_value = cur_value;
-    }
-    time += MGFX_TIME_DELTA_TIME;
-
-    mgfx_debug_draw_text(0, 0, "delta time: %.2f ms", last_value * 1000.0f);
 }
 
 void mgfx_example_shutdown() {

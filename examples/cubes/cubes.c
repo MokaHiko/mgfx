@@ -1,14 +1,18 @@
 #include "ex_common.h"
 
-typedef struct Vertex {
+#include <mx/mx_log.h>
+#include <mx/mx_math.h>
+#include <mx/mx_math_mtx.h>
+
+typedef struct my_vertex {
     float position[3];
     float uv_x;
     float normal[3];
     float uv_y;
     float color[4];
-} Vertex;
+} my_vertex;
 
-static Vertex k_vertices[] = {
+static my_vertex k_vertices[] = {
     // Front face
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
     {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
@@ -45,21 +49,21 @@ static Vertex k_vertices[] = {
     {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},   // Top-right
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}},  // Top-left
 };
-const size_t k_cube_vertex_count = sizeof(k_vertices) / sizeof(Vertex);
+const size_t k_cube_vertex_count = sizeof(k_vertices) / sizeof(my_vertex);
 
 static uint32_t k_indices[] = {
-    // Front face
-    0, 1, 2, 0, 2, 3,
-    // Back face
-    4, 5, 6, 4, 6, 7,
-    // Left face
-    8, 9, 10, 8, 10, 11,
-    // Right face
+    0,  1,  2,  0,  2,  3,
+
+    4,  5,  6,  4,  6,  7,
+
+    8,  9,  10, 8,  10, 11,
+
     12, 13, 14, 12, 14, 15,
-    // Top face
+
     16, 17, 18, 16, 18, 19,
-    // Bottom face
-    20, 21, 22, 20, 22, 23};
+
+    20, 21, 22, 20, 22, 23,
+};
 const size_t k_cube_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
 mgfx_sh quad_vsh, fsh;
@@ -67,6 +71,13 @@ mgfx_ph gfxph;
 
 mgfx_vbh vbh;
 mgfx_ibh ibh;
+
+void mat4_log(const mx_mat4 m) {
+    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[0], m[4], m[8], m[12]);
+    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[1], m[5], m[9], m[13]);
+    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[2], m[6], m[10], m[14]);
+    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[3], m[7], m[11], m[15]);
+};
 
 void mgfx_example_init() {
     quad_vsh = mgfx_shader_create("assets/shaders/unlit.vert.glsl.spv");
@@ -78,46 +89,34 @@ void mgfx_example_init() {
 }
 
 void mgfx_example_update() {
-    for (int x = -2; x < 3; x++) {
-        mgfx_bind_vertex_buffer(vbh);
-        mgfx_bind_index_buffer(ibh);
-
-        mat4 model;
-        glm_mat4_identity(model);
-
-        vec3 position = {x * 2.0f, 0.0f, -5.0f};
-
-        glm_translate(model, position);
-
-        vec3 axis = {1.0, 1.0, 1.0};
-        glm_rotate(model, MGFX_TIME * 3.141593, axis);
-
-        mgfx_set_transform(model[0]);
-
-        mat4 proj;
-        glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 10000.0f, proj);
-        proj[1][1] *= -1;
-        mgfx_set_proj(proj[0]);
-
-        mat4 view;
-        glm_mat4_identity(view);
-        mgfx_set_view(view[0]);
-
-        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
-    }
-
     // Profiler
     static float last_value = 0.0f;
     float cur_value = MGFX_TIME_DELTA_TIME;
-    float epsilon = 0.01f;
+    float epsilon = 0.005f;
 
     if (fabsf(cur_value - last_value) > epsilon) {
         last_value = cur_value;
     }
+    mgfx_debug_draw_text(0, APP_HEIGHT * 0.95f, "dt: %.2f ms", last_value * 1000.0f);
 
-    mgfx_debug_draw_text(0, 0, "delta time: %.2f s", last_value * 1000.0f);
+    for (int x = -2; x < 3; x++) {
+        mgfx_bind_vertex_buffer(vbh);
+        mgfx_bind_index_buffer(ibh);
 
-    //mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], (mx_vec3){0.0f, 0.0f, 0.0f} , NULL, NULL);
+        mx_mat4 model = MX_MAT4_IDENTITY;
+        mx_mat4_rotate_euler((mx_vec3){MGFX_TIME, MGFX_TIME, MGFX_TIME}, model);
+        mx_translate((mx_vec3){x * 2.0f, 0.0f, -10.0f}, model);
+        mgfx_set_transform(model);
+
+        mx_mat4 proj = MX_MAT4_IDENTITY;
+        mx_perspective(MX_DEG_TO_RAD(60.0), 16.0 / 9.0, 0.1, 1000.0f, proj);
+        mgfx_set_proj(proj);
+
+        mx_mat4 view = MX_MAT4_IDENTITY;
+        mgfx_set_view(view);
+
+        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
+    }
 }
 
 void mgfx_example_shutdown() {

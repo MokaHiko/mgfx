@@ -47,4 +47,11 @@ typedef struct mgfx_transient_buffer {
     mx_ptr_t buffer_handle; // VkBuffer
 } mgfx_transient_buffer;
 
+typedef struct mgfx_graphics_ex_create_info {
+    int32_t primitive_topology; // VkPrimitiveTopology
+    int32_t polygon_mode;       // VkPolygonMode
+
+    mx_bool instanced;
+} mgfx_graphics_ex_create_info;
+
 #endif

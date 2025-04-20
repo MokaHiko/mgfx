@@ -1,5 +1,5 @@
-#ifndef MGFX_RENDERER_VK
-#define MGFX_RENDERER_VK
+#ifndef MGFX_RENDERER_VK_H_
+#define MGFX_RENDERER_VK_H_
 
 #include <mx/mx.h>
 #include <mx/mx_log.h>

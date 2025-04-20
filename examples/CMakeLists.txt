@@ -65,6 +65,7 @@ set(SHADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/lit.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blit.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blit.frag.glsl
 
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gizmos.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/gizmos.frag.glsl

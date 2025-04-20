@@ -105,6 +105,9 @@ void main() {
     vec3 v = normalize(cam_position - world_position);
 
     vec3 albedo = pow(texture(albedo_map, v_uv).rgb, vec3(2.2));
+    albedo *= albedo_factor;
+    //albedo *= v_color;
+
     float metallic = texture(metallic_roughness_map, v_uv).b;
     float roughness = texture(metallic_roughness_map, v_uv).g;
     float ao = texture(occlusion_map, v_uv).r * ao_factor;

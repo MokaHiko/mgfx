@@ -35,6 +35,5 @@ void main() {
 	// TODO: send from cpu
 	//cam_position = view_inv[3].xyz;
 	cam_position = inverse(view)[3].xyz;
-
 	gl_Position = proj * view * model * vec4(position, 1.0f);
 }

@@ -20,6 +20,7 @@ layout(push_constant) uniform graphics_pc {
 void main() {
 	v_normal = (normal.xyz);
 	v_color = (color.xyz);
+
 	v_uv = vec2(uv_x, uv_y);
 	gl_Position = proj * view * model * vec4(position, 1.0f);
 }

@@ -6,6 +6,32 @@
 
 #include <vulkan/vulkan_core.h>
 
+typedef struct mgfx_built_in_vertex {
+    float position[3];
+    float uv_x;
+    float normal[3];
+    float uv_y;
+    float color[4];
+} mgfx_built_in_vertex;
+
+// OpenGL-style NDC fullscreen quad (for blitting to screen)
+//
+//   ^ Y+
+//   |
+//   |    (-1,+1)           (+1,+1)
+//   |     3 ┌──────────────┐ 2
+//   |       │              │
+//   |       │    Screen    │
+//   |       │     Quad     │
+//   |       │              │
+//   |     0 └──────────────┘ 1
+//   |   (-1,-1)           (+1,-1)
+//   └────────────────────────────> X+
+
+// Full screen quad
+extern const mgfx_built_in_vertex MGFX_FS_QUAD_VERTICES[4];
+extern const uint32_t MGFX_FS_QUAD_INDICES[6];
+
 #ifdef __cplusplus
 extern "C" { // Ensure C++ linkage compatibility
 #endif
@@ -94,12 +120,11 @@ MGFX_HANDLE(mgfx_fbh)
  */
 MGFX_HANDLE(mgfx_th)
 
-
 /**
  * @brief Renders debug text on the backbuffer.
  * @note Must be called on main draw loop.
  */
-MX_API void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...);
+MX_API void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...);
 
 MX_API MX_NO_DISCARD mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len);
 
@@ -113,14 +138,19 @@ MX_API MX_NO_DISCARD mgfx_sh mgfx_shader_create(const char* path);
 MX_API void mgfx_shader_destroy(mgfx_sh sh);
 
 MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
+MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
+                                                             mgfx_sh fsh,
+                                                             const mgfx_graphics_ex_create_info* ex_info);
 MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
 MX_API void mgfx_program_destroy(mgfx_ph ph);
 
 MX_API MX_NO_DISCARD mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage);
 MX_API void mgfx_image_destroy(mgfx_imgh imgh);
 
-MX_API MX_NO_DISCARD mgfx_th
-mgfx_texture_create_from_memory(const mgfx_image_info* info, uint32_t filter, void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
+                                                             uint32_t filter,
+                                                             void* data,
+                                                             size_t len);
 MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter);
 MX_API void mgfx_texture_destroy(mgfx_th th, mx_bool release_image);
 

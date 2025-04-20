@@ -708,11 +708,12 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
 
     vk_cmd_begin_rendering_khr(cmd, &rendering_info);
 
+    // Flipped view port to align with openGL style convention.
     VkViewport view_port = {
         .x = 0,
-        .y = 0,
+        .y = height,
         .width = width,
-        .height = height,
+        .height = -height,
         .minDepth = 0.0f,
         .maxDepth = 1.0f,
     };

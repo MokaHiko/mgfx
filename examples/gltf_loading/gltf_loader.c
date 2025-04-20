@@ -185,7 +185,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
-                        scene->textures[tex_idx] = load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
+                        scene->textures[tex_idx] =
+                            load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].albedo_texture = scene->textures[tex_idx];
@@ -269,7 +270,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                         strcpy(absolute_path, dir_name);
                         strcat(absolute_path, data->textures[tex_idx].image->uri);
 
-                        scene->textures[tex_idx] = load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
+                        scene->textures[tex_idx] =
+                            load_texture_2d_from_path(absolute_path, VK_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].emissive_texture = scene->textures[tex_idx];
@@ -329,6 +331,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             assert(mesh_primitive->vertices != NULL);
 
             mx_bool has_tangents = MX_FALSE;
+            mx_bool has_color = MX_FALSE;
             for (size_t attrib_idx = 0; attrib_idx < primitive->attributes_count; attrib_idx++) {
                 const cgltf_attribute* attribute = &primitive->attributes[attrib_idx];
 
@@ -372,6 +375,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     break;
 
                 case cgltf_attribute_type_color:
+                    has_color = MX_TRUE;
                     break;
 
                 case cgltf_attribute_type_position:
@@ -439,16 +443,20 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                 }
             }
 
+            if(!has_color) {
+                MX_LOG_ERROR("NO COLOR");
+            }
+
             mesh_primitive->vbh = mgfx_vertex_buffer_create(mesh_primitive->vertices,
                                                             mesh_primitive->vertex_count * scene->vl->stride);
 
             mesh_primitive->ibh = mgfx_index_buffer_create(mesh_primitive->indices,
                                                            mesh_primitive->index_count * sizeof(uint32_t));
 
-            MX_LOG_SUCCESS("Mesh loaded: (%u vertices, %d indices) %s",
-                           mesh_primitive->vertex_count,
-                           mesh_primitive->index_count,
-                           mesh->name ? mesh->name : "<unamed>");
+            size_t primitive_size = (mesh_primitive->vertex_count * scene->vl->stride +
+                                     mesh_primitive->index_count * sizeof(uint32_t));
+
+            MX_LOG_SUCCESS("Primitive (%lu) loaded: (%.2f kb)", primitive_idx, (float)primitive_size / MX_KB);
         }
     }
 
@@ -497,6 +505,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         }
     }
 
+    mx_arena_free(&scene->allocator);
     cgltf_free(data);
 };
 

@@ -189,20 +189,19 @@ static uint32_t s_frame_idx = 0;
 
 static VkDescriptorPool s_ds_pool;
 
-enum { MGFX_MAX_FRAME_BUFFER_COPIES = 256 };
+enum { MGFX_MAX_FRAME_BUFFER_COPIES = 300 };
 static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_buffer_copy_count = 0;
 
 static buffer_to_image_copy_vk s_buffer_to_image_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_image_copy_count = 0;
 
-ring_buffer_vk tvb_pool; // Transient vertex buffer pool
-ring_buffer_vk tib_pool; // Transient index buffer pool
+static ring_buffer_vk s_tvb_pool; // Transient vertex buffer pool
+static ring_buffer_vk s_tib_pool; // Transient index buffer pool
 
-mgfx_transient_buffer tsbs[MGFX_MAX_FRAME_BUFFER_COPIES];
-static uint32_t tsbs_count = 0;
-
-ring_buffer_vk tsb_pool; // Transient staging buffer pool
+static mgfx_transient_buffer s_tsbs[MGFX_MAX_FRAME_BUFFER_COPIES];
+static uint32_t s_tsbs_count = 0;
+static ring_buffer_vk s_tsb_pool; // Transient staging buffer pool
 
 void image_create(const mgfx_image_info* info,
                   VkImageUsageFlags usage,
@@ -240,18 +239,20 @@ void image_create(const mgfx_image_info* info,
     VK_CHECK(vmaCreateImage(s_allocator, &image_info, &alloc_info, &image->handle, &image->allocation, NULL));
 
 #ifdef MX_DEBUG
-    static size_t image_memory_accum = 0;
+    static size_t mem_acc = 0;
 
     VmaAllocationInfo image_alloc_info = {0};
     vmaGetAllocationInfo(s_allocator, image->allocation, &image_alloc_info);
-    image_memory_accum += image_alloc_info.size;
+    mem_acc += image_alloc_info.size;
 
     if (image_alloc_info.size > MX_MB) {
-        MX_LOG_TRACE("[ImageAlloc] + %lu mb = %.2f mb", image_alloc_info.size / MX_MB, (float)image_memory_accum / MX_MB);
+        MX_LOG_TRACE(
+            "[ImageAlloc] + %lu mb = %.2f mb", image_alloc_info.size / MX_MB, (float)mem_acc / MX_MB);
     } else if (image_alloc_info.size > MX_KB) {
-        MX_LOG_TRACE("[ImageAlloc] + %lu kb = %.2f mb", image_alloc_info.size / MX_KB, (float)image_memory_accum / MX_MB);
+        MX_LOG_TRACE(
+            "[ImageAlloc] + %lu kb = %.2f mb", image_alloc_info.size / MX_KB, (float)mem_acc / MX_MB);
     } else {
-        MX_LOG_TRACE("[ImageAlloc] + %lu b = %.2f mb", image_alloc_info.size, (float)image_memory_accum / MX_MB);
+        MX_LOG_TRACE("[ImageAlloc] + %lu b = %.2f mb", image_alloc_info.size, (float)mem_acc / MX_MB);
     }
 
 #endif
@@ -293,8 +294,9 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
                                size_t len,
                                mgfx_transient_buffer* out);
 void image_update(const void* data, size_t size, image_vk* image) {
-    mgfx_transient_buffer* staging_buffer = &tsbs[tsbs_count++];
-    transient_buffer_allocate(&tsb_pool, data, size, staging_buffer);
+    MX_ASSERT(s_tsbs_count < MGFX_MAX_FRAME_BUFFER_COPIES);
+    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_tsbs_count++];
+    transient_buffer_allocate(&s_tsb_pool, data, size, staging_buffer);
 
     MX_ASSERT(s_buffer_to_image_copy_count < MGFX_MAX_FRAME_BUFFER_COPIES);
     s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] = (buffer_to_image_copy_vk){
@@ -313,7 +315,7 @@ void image_update(const void* data, size_t size, image_vk* image) {
                 .imageOffset = 0,
                 .imageExtent = image->extent,
             },
-        .src = &tsb_pool.buffer,
+        .src = &s_tsb_pool.buffer,
         .dst = image,
     };
 };
@@ -475,14 +477,18 @@ void buffer_create(size_t size, VkBufferUsageFlags usage, VmaAllocationCreateFla
     buffer_memory_accum += buffer_alloc_info.size;
 
     if (buffer_alloc_info.size > MX_MB) {
-        MX_LOG_TRACE("[BufferAlloc] + %lu mb = %.2f mb", buffer_alloc_info.size / MX_MB, (float)buffer_memory_accum / MX_MB);
+        MX_LOG_TRACE("[BufferAlloc] + %lu mb = %.2f mb",
+                     buffer_alloc_info.size / MX_MB,
+                     (float)buffer_memory_accum / MX_MB);
     } else if (buffer_alloc_info.size > MX_KB) {
-        MX_LOG_TRACE("[BufferAlloc] + %lu kb = %.2f mb", buffer_alloc_info.size / MX_KB, (float)buffer_memory_accum / MX_MB);
+        MX_LOG_TRACE("[BufferAlloc] + %lu kb = %.2f mb",
+                     buffer_alloc_info.size / MX_KB,
+                     (float)buffer_memory_accum / MX_MB);
     } else {
-        MX_LOG_TRACE("[BufferAlloc] + %lu b = %.2f mb", buffer_alloc_info.size, (float)buffer_memory_accum / MX_MB);
+        MX_LOG_TRACE(
+            "[BufferAlloc] + %lu b = %.2f mb", buffer_alloc_info.size, (float)buffer_memory_accum / MX_MB);
     }
 #endif
-
 };
 
 // Forward declare transient for staging buffers
@@ -506,10 +512,11 @@ void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const v
     }
 
     // TODO: Recover and resize
-    MX_ASSERT(s_buffer_to_buffer_copy_count < MGFX_MAX_FRAME_BUFFER_COPIES);
-    mgfx_transient_buffer* staging_buffer = &tsbs[tsbs_count++];
-    transient_buffer_allocate(&tsb_pool, data, size, staging_buffer);
+    MX_ASSERT(s_tsbs_count < MGFX_MAX_FRAME_BUFFER_COPIES);
+    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_tsbs_count++];
+    transient_buffer_allocate(&s_tsb_pool, data, size, staging_buffer);
 
+    MX_ASSERT(s_buffer_to_buffer_copy_count < MGFX_MAX_FRAME_BUFFER_COPIES);
     s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] = (buffer_to_buffer_copy_vk){
         .copy =
             {
@@ -517,7 +524,7 @@ void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const v
                 .dstOffset = dst_offset,
                 .size = size,
             },
-        .src = &tsb_pool.buffer,
+        .src = &s_tsb_pool.buffer,
         .dst = buffer,
     };
 }
@@ -618,15 +625,15 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
 }
 
 void transient_vertex_buffer_free(mgfx_transient_buffer* tvb) {
-    tvb_pool.tail = (tvb_pool.tail + tvb->size) % tvb_pool.size;
+    s_tvb_pool.tail = (s_tvb_pool.tail + tvb->size) % s_tvb_pool.size;
 }
 
 void transient_index_buffer_free(mgfx_transient_buffer* tib) {
-    tib_pool.tail = (tib_pool.tail + tib->size) % tib_pool.size;
+    s_tib_pool.tail = (s_tib_pool.tail + tib->size) % s_tib_pool.size;
 }
 
 void transient_staging_buffer_free(mgfx_transient_buffer* tsb) {
-    tsb_pool.tail = (tsb_pool.tail + tsb->size) % tsb_pool.size;
+    s_tsb_pool.tail = (s_tsb_pool.tail + tsb->size) % s_tsb_pool.size;
 }
 
 void framebuffer_create(uint32_t color_attachment_count,
@@ -848,7 +855,7 @@ void pipeline_create_graphics(const shader_vk* vs,
     input_assembly_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly_state_info.pNext = NULL;
     input_assembly_state_info.flags = 0;
-    input_assembly_state_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    input_assembly_state_info.topology = (VkPrimitiveTopology)program->primitive_topology;
     input_assembly_state_info.primitiveRestartEnable = VK_FALSE;
     info.pInputAssemblyState = &input_assembly_state_info;
 
@@ -877,7 +884,7 @@ void pipeline_create_graphics(const shader_vk* vs,
         .flags = 0,
         .depthClampEnable = VK_FALSE,
         .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
+        .polygonMode = (VkPolygonMode)program->polygon_mode,
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
@@ -1127,6 +1134,20 @@ mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain
 }
 
 // ~ VULKAN RENDERER  ~ //
+const mgfx_built_in_vertex MGFX_FS_QUAD_VERTICES[4] = {
+    // Vertex 0: Bottom-left
+    {{-1.0f, -1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
+
+    // Vertex 1: Bottom-right
+    {{1.0f, -1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
+
+    // Vertex 2: Top-right
+    {{1.0f, 1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+
+    // Vertex 3: Top-left
+    {{-1.0f, 1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 1.0f, 0.0f, 1.0f}},
+};
+const uint32_t MGFX_FS_QUAD_INDICES[6] = {0, 1, 2, 2, 3, 0};
 
 typedef struct mgfx_draw {
     struct descriptor_sets {
@@ -1162,7 +1183,7 @@ static int draw_compare_fn(const void* a, const void* b) {
     const mgfx_draw* draw_a = (mgfx_draw*)a;
     const mgfx_draw* draw_b = (mgfx_draw*)b;
 
-    return draw_a->sort_key > draw_b->sort_key;
+    return draw_a->sort_key > draw_b->sort_key ? 1 : -1;
 }
 
 typedef struct buffer_entry {
@@ -1230,7 +1251,8 @@ static float s_current_transform[16];
 static float s_current_view[16];
 static float s_current_proj[16];
 
-static mgfx_draw s_draws[256];
+enum {MGFX_MAX_DRAW_COUNT = 256};
+static mgfx_draw s_draws[MGFX_MAX_DRAW_COUNT];
 static uint32_t s_draw_count = 0;
 
 // Debug Text
@@ -1247,6 +1269,10 @@ mgfx_ph dbg_ui_ph;
 
 mgfx_th dbg_ui_font_atlas_th;
 mgfx_dh dbg_ui_font_atlas_dh;
+
+// Debug Gizmos
+mgfx_vbh dbg_quad_vbh;
+mgfx_ibh dbg_quad_ibh;
 
 int mgfx_init(const mgfx_init_info* info) {
     mx_arena vk_init_arena = mx_arena_alloc(MX_MB);
@@ -1406,6 +1432,8 @@ int mgfx_init(const mgfx_init_info* info) {
     }
 
     VkPhysicalDeviceFeatures phys_device_features = {0};
+    phys_device_features.fillModeNonSolid = VK_TRUE;
+
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamic_rendering_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR,
         .dynamicRendering = VK_TRUE,
@@ -1521,21 +1549,21 @@ int mgfx_init(const mgfx_init_info* info) {
     VK_CHECK(vkCreateDescriptorPool(s_device, &ds_pool_info, NULL, &s_ds_pool));
 
     // Initialize staging buffers
-    enum { MGFX_MAX_STAGING_BUFFER_SIZE = MX_MB * 100 };
+    enum { MGFX_MAX_STAGING_BUFFER_SIZE = MX_MB * 500 };
     ring_buffer_create(MGFX_MAX_STAGING_BUFFER_SIZE,
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-                       &tsb_pool);
+                       &s_tsb_pool);
 
     ring_buffer_create(MGFX_DEBUG_MAX_TEXT * 4 * 48,
                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        0,
-                       &tvb_pool);
+                       &s_tvb_pool);
 
     ring_buffer_create(MGFX_DEBUG_MAX_TEXT * 6 * sizeof(uint32_t),
                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        0,
-                       &tib_pool);
+                       &s_tib_pool);
 
     mx_arena_free(&vk_init_arena);
 
@@ -1566,6 +1594,9 @@ int mgfx_init(const mgfx_init_info* info) {
     // Done packing
     stbtt_PackEnd(&context);
 
+    stbtt_fontinfo font;
+    stbtt_InitFont(&font, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0));
+
     const mgfx_image_info img_info = {
         .format = VK_FORMAT_R8_UNORM,
         .width = atlas_w,
@@ -1589,6 +1620,10 @@ int mgfx_init(const mgfx_init_info* info) {
 
     mx_free(ttf_buffer);
 
+    // Debug Gizmos
+    dbg_quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
+    dbg_quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
+
     MX_LOG_SUCCESS("MGFX Initialized!");
     return MGFX_SUCCESS;
 }
@@ -1606,11 +1641,11 @@ mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len) {
 }
 
 void mgfx_transient_vertex_buffer_allocate(const void* data, size_t len, mgfx_transient_buffer* out) {
-    transient_buffer_allocate(&tvb_pool, data, len, out);
+    transient_buffer_allocate(&s_tvb_pool, data, len, out);
 }
 
 void mgfx_transient_index_buffer_allocate(const void* data, size_t len, mgfx_transient_buffer* out) {
-    transient_buffer_allocate(&tib_pool, data, len, out);
+    transient_buffer_allocate(&s_tib_pool, data, len, out);
 }
 
 mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
@@ -1645,6 +1680,7 @@ void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t len, size_
 }
 
 void mgfx_buffer_destroy(uint64_t idx) {
+    vkDeviceWaitIdle(s_device);
     buffer_entry* entry;
     HASH_FIND(hh, s_buffer_table, &idx, sizeof(idx), entry);
 
@@ -1689,11 +1725,7 @@ void mgfx_shader_destroy(mgfx_sh sh) {
 }
 
 mgfx_ph
-mgfx_program_create_(mgfx_sh* sh, uint32_t sh_count, int32_t primitive_topology, int32_t polygon_mode) {
-    return (mgfx_ph){.idx = 0};
-}
-
-mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
+mgfx_program_create_graphics_ex(mgfx_sh vsh, mgfx_sh fsh, const mgfx_graphics_ex_create_info* ex_info) {
     program_entry* entry = mx_alloc(sizeof(program_entry), 0);
     memset(entry, 0, sizeof(program_entry));
     entry->key.idx = (uint64_t)entry;
@@ -1701,12 +1733,24 @@ mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
     entry->value.shaders[MGFX_SHADER_STAGE_VERTEX] = vsh;
     entry->value.shaders[MGFX_SHADER_STAGE_FRAGMENT] = fsh;
 
-    entry->value.polygon_mode = VK_POLYGON_MODE_FILL;
-    entry->value.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    entry->value.polygon_mode = ex_info->polygon_mode;
+    entry->value.primitive_topology = ex_info->primitive_topology;
+
+    if (ex_info->instanced) {
+    }
 
     HASH_ADD(hh, s_program_table, key, sizeof(entry->key), entry);
 
     return entry->key;
+}
+
+mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
+    const mgfx_graphics_ex_create_info gfx_create_info = {
+        .polygon_mode = VK_POLYGON_MODE_FILL,
+        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+
+    return mgfx_program_create_graphics_ex(vsh, fsh, &gfx_create_info);
 }
 
 mgfx_ph mgfx_program_create(mgfx_sh* sh) { return (mgfx_ph){0}; }
@@ -2026,6 +2070,8 @@ void mgfx_set_view(const float* mtx) { memcpy(s_current_view, mtx, sizeof(float)
 void mgfx_set_proj(const float* mtx) { memcpy(s_current_proj, mtx, sizeof(float) * 16); }
 
 void mgfx_submit(uint8_t target, mgfx_ph ph) {
+    MX_ASSERT(s_draw_count < MGFX_MAX_DRAW_COUNT, "Reached max draws! Consider instancing or batching!");
+
     program_entry* entry;
     HASH_FIND(hh, s_program_table, &ph, sizeof(ph), entry);
     MX_ASSERT(entry != NULL, "Program invalid handle!");
@@ -2073,13 +2119,17 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
     memcpy(current_draw->draw_pc.view, s_current_view, sizeof(float) * 16);
     memcpy(current_draw->draw_pc.proj, s_current_proj, sizeof(float) * 16);
 
+    // TODO: Make ph.idx a uint16_t
+    // TODO: Sort by descriptors
     current_draw->sort_key = ((uint64_t)(target) << 56) | // highest priority (view)
                              ((uint64_t)(ph.idx) << 40);  // then shader program
-                                                          /*| ((uint64_t)(materialhash) << 8);*/
+                                                          /*| ((uint64_t)(descriptors_hash) << 8);*/
     ++s_draw_count;
 }
 
 void mgfx_frame() {
+    static uint64_t s_frame_ctr = 0;
+
     // Get current frame.
     frame_vk* frame = &s_frames[s_frame_idx];
 
@@ -2237,10 +2287,10 @@ void mgfx_frame() {
     }
 
     // Clear transient buffers
-    for (uint32_t tsb_idx = 0; tsb_idx < tsbs_count; tsb_idx++) {
-        tsb_pool.tail = (tsb_pool.tail + tsbs[tsb_idx].size) % tsb_pool.size;
+    for (uint32_t tsb_idx = 0; tsb_idx < s_tsbs_count; tsb_idx++) {
+        s_tsb_pool.tail = (s_tsb_pool.tail + s_tsbs[tsb_idx].size) % s_tsb_pool.size;
     }
-    tsbs_count = 0;
+    s_tsbs_count = 0;
 
     vk_cmd_transition_image(frame->cmd,
                             &s_swapchain.images[s_swapchain.free_idx],
@@ -2250,17 +2300,11 @@ void mgfx_frame() {
     VkClearColorValue clear = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-    // Sort draws by view target and program TODO: Sort by descriptors
-    qsort(s_draws, s_draw_count, sizeof(mgfx_draw), draw_compare_fn);
-    /*MX_LOG_INFO("Sorted");*/
-    /*for (uint32_t draw_idx = 0; draw_idx < s_draw_count; draw_idx++) {*/
-    /*    MX_LOG_INFO("target: (0x%02x) - ph: (0x%016llx)",*/
-    /*                s_draws[draw_idx].view_target,*/
-    /*                (unsigned long long)s_draws[draw_idx].ph.idx);*/
-    /*}*/
+    // Sort draws by view target, program, descriptor sets
+    qsort(s_draws, (size_t)s_draw_count, sizeof(mgfx_draw), draw_compare_fn);
 
     framebuffer_vk* fb = NULL;
-    uint8_t target = MGFX_DEFAULT_VIEW_TARGET - 1;
+    uint8_t target = 10;
 
     VkDescriptorSet flat_ds[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     uint32_t flat_ds_count = 0;
@@ -2274,18 +2318,11 @@ void mgfx_frame() {
     uint32_t cur_idx_count = 0;
 
     for (uint32_t draw_idx = 0; draw_idx < s_draw_count; draw_idx++) {
-
         const mgfx_draw* draw = &s_draws[draw_idx];
         program_entry* program_entry;
         HASH_FIND(hh, s_program_table, &draw->ph, sizeof(mgfx_ph), program_entry);
 
         MX_ASSERT(program_entry != NULL);
-
-        // Check program in view target.
-        if (cur_program != &program_entry->value) {
-            cur_program = &program_entry->value;
-            vkCmdBindPipeline(frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)cur_program->pipeline);
-        }
 
         if (draw->view_target != target) {
             target = draw->view_target;
@@ -2371,6 +2408,17 @@ void mgfx_frame() {
             }
 
             vk_cmd_begin_rendering(frame->cmd, fb);
+            /*MX_LOG_INFO("TARGET : %u", target);*/
+            /*for (uint32_t i = 0; i < fb->color_attachment_count; i++) {*/
+            /*    MX_LOG_INFO("color_attachment: %lu", (uint64_t)fb->color_attachment_views[i]);*/
+            /*}*/
+            /*MX_LOG_INFO("depth_attachment: %lu", (uint64_t)fb->depth_attachment_view);*/
+        }
+
+        // Check program in view target.
+        if (cur_program != &program_entry->value) {
+            cur_program = &program_entry->value;
+            vkCmdBindPipeline(frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)cur_program->pipeline);
         }
 
         flat_ds_count = 0;
@@ -2495,8 +2543,7 @@ void mgfx_frame() {
                 cur_vbs[tvb_idx] = (VkBuffer)draw->tvbs[tvb_idx].buffer_handle;
 
                 offsets[tvb_idx] = draw->tvbs[tvb_idx].offset;
-
-                tvb_pool.tail = (uint32_t)((tvb_pool.tail + draw->tvbs[tvb_idx].size) % tvb_pool.size);
+                s_tvb_pool.tail = (uint32_t)((s_tvb_pool.tail + draw->tvbs[tvb_idx].size) % s_tvb_pool.size);
             }
 
             vkCmdBindVertexBuffers(frame->cmd, 0, draw->tvbh_count, cur_vbs, offsets);
@@ -2522,13 +2569,13 @@ void mgfx_frame() {
         }
 
         if ((VkBuffer)draw->tib.buffer_handle != VK_NULL_HANDLE) {
-            cur_ib = (VkBuffer)draw->tib.buffer_handle;
-
-            cur_idx_count = draw->tib.size / sizeof(uint32_t);
+            if ((VkBuffer)draw->tib.buffer_handle != cur_ib) {
+                cur_ib = (VkBuffer)draw->tib.buffer_handle;
+            };
 
             vkCmdBindIndexBuffer(frame->cmd, cur_ib, draw->tib.offset, VK_INDEX_TYPE_UINT32);
-
-            tib_pool.tail = (tib_pool.tail + draw->tib.size) % tib_pool.size;
+            cur_idx_count = draw->tib.size / sizeof(uint32_t);
+            s_tib_pool.tail = (s_tib_pool.tail + draw->tib.size) % s_tib_pool.size;
         }
 
         vkCmdPushConstants(frame->cmd,
@@ -2600,11 +2647,12 @@ void mgfx_frame() {
         break;
     }
 
+    ++s_frame_ctr;
     s_frame_idx = (s_frame_idx + 1) % MGFX_FRAME_COUNT;
 };
 
 // Debug tools
-void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...) {
+void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     char word_buffer[MGFX_DEBUG_MAX_TEXT];
     memset(word_buffer, 0, sizeof(word_buffer));
 
@@ -2636,47 +2684,53 @@ void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...) {
 
         // Calculate the vertices for the current character
         float x0 = cursor_x + c->xoff;   // Start x position + offset
-        float y0 = cursor_y + c->yoff;   // Start y position + offset
+        float y0 = cursor_y - c->yoff;   // Start y position + offset
         float x1 = x0 + (c->x1 - c->x0); // End x position + offset
-        float y1 = y0 + (c->y1 - c->y0); // End y position + offset
+        float y1 = y0 - (c->y1 - c->y0); // End y position + offset
+
+        // Uvs flipped form openGL NDCs
+        float uv_y0 = ((float)c->y0 / (float)atlas_h);
+        float uv_y1 = ((float)c->y1 / (float)atlas_h);
 
         // Bottom left
         uint32_t vertex_offset = (uint32_t)char_idx * 4;
         vertices[vertex_offset + 0] = (glyph_vertex){
             .position = {x0, y0, 0.0f}, // Position in 2D space
             .uv_x = (float)c->x0 / (float)atlas_w,
-            .uv_y = (float)c->y0 / (float)atlas_h,
+            .uv_y = uv_y0,
         };
 
         // Bottom right
         vertices[vertex_offset + 1] = (glyph_vertex){
             .position = {x1, y0, 0.0f}, // Position in 2D space
             .uv_x = (float)c->x1 / (float)atlas_w,
-            .uv_y = (float)c->y0 / (float)atlas_h,
+            .uv_y = uv_y0,
         };
 
         // Top right
         vertices[vertex_offset + 2] = (glyph_vertex){
             .position = {x1, y1, 0.0f}, // Position in 2D space
             .uv_x = (float)c->x1 / (float)atlas_w,
-            .uv_y = (float)c->y1 / (float)atlas_h,
+            .uv_y = uv_y1,
         };
 
         // Top left
         vertices[vertex_offset + 3] = (glyph_vertex){
             .position = {x0, y1, 0.0f}, // Position in 2D space
             .uv_x = (float)c->x0 / (float)atlas_w,
-            .uv_y = (float)c->y1 / (float)atlas_h,
+            .uv_y = uv_y1,
         };
+
         vertex_count += 4;
 
+        // Counter clickwise vertices
         uint32_t char_indices[6] = {
             0 + vertex_offset,
             3 + vertex_offset,
-            2 + vertex_offset, // Triangle 1: bottom-left → top-left → top-right
-            0 + vertex_offset,
             2 + vertex_offset,
-            1 + vertex_offset // Triangle 2: bottom-left → top-right → bottom-right
+            2 + vertex_offset,
+            1 + vertex_offset,
+            0 + vertex_offset,
         };
 
         memcpy(&indices[char_idx * 6], char_indices, sizeof(uint32_t) * 6);
@@ -2684,6 +2738,28 @@ void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...) {
 
         cursor_x += c->xadvance;
     }
+
+    // Typical ortho
+    // TODOL: Get from application
+    s_width = 1280;
+    s_height = 720;
+    const real_t right = (real_t)s_width;
+    const real_t top = (real_t)s_height;
+    mx_mat4 proj = MX_MAT4_IDENTITY;
+    mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f, proj);
+    mgfx_set_proj(proj);
+
+    mx_vec3 ui_cam_pos = {0, 0, 2};
+    mx_vec3 ui_inverse_pos = MX_VEC3_ZERO;
+    mx_vec3_scale(ui_cam_pos, -1.0f, ui_inverse_pos);
+
+    mx_mat4 view = MX_MAT4_IDENTITY;
+    mx_translate(ui_inverse_pos, view);
+    mgfx_set_view(view);
+
+    mx_mat4 model = MX_MAT4_IDENTITY;
+    mx_translate((mx_vec3){(float)x, (float)y, -1.0}, model);
+    mgfx_set_transform(model);
 
     mgfx_transient_buffer tvb = {0};
     mgfx_transient_vertex_buffer_allocate(vertices, vertex_count * sizeof(glyph_vertex), &tvb);
@@ -2695,21 +2771,45 @@ void mgfx_debug_draw_text(uint32_t x, uint32_t y, const char* fmt, ...) {
     mgfx_bind_transient_index_buffer(tib);
     mgfx_bind_descriptor(0, dbg_ui_font_atlas_dh);
 
-    mx_mat4 model = MX_MAT4_IDENTITY;
-    mx_translate((mx_vec3){(float)x, (float)y, -500.0f}, model);
-    mgfx_set_transform(model);
-
-    mx_mat4 proj = MX_MAT4_IDENTITY;
-    mx_perspective(MX_DEG_TO_RAD(60.0f), 16.0f / 9.0f, 0.1f, 1000.0, proj);
-    mgfx_set_proj(proj);
-
-    mx_mat4 view = MX_MAT4_IDENTITY;
-    mgfx_set_view(view);
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
+
+    if (MX_FALSE) {
+        // Typical ortho
+        const real_t right = 10.0f;
+        const real_t top = 10.0f;
+        mx_mat4 proj = MX_MAT4_IDENTITY;
+        mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f, proj);
+        mgfx_set_proj(proj);
+
+        mx_mat4 model = MX_MAT4_IDENTITY;
+        static float yPos = top / 2.0f;
+        yPos += 0.01 * 1.0f;
+
+        mx_translate((mx_vec3){right / 2.0, yPos, -1.0}, model);
+        mgfx_set_transform(model);
+
+        mx_vec3 ui_cam_pos = {0, 0, 2};
+        mx_vec3 ui_inverse_pos = MX_VEC3_ZERO;
+        mx_vec3_scale(ui_cam_pos, -1.0f, ui_inverse_pos);
+
+        mx_mat4 view = MX_MAT4_IDENTITY;
+        mx_translate(ui_inverse_pos, view);
+        mgfx_set_view(view);
+
+        mgfx_bind_descriptor(0, dbg_ui_font_atlas_dh);
+
+        mgfx_bind_vertex_buffer(dbg_quad_vbh);
+        mgfx_bind_index_buffer(dbg_quad_ibh);
+
+        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
+    }
 }
 
 void mgfx_shutdown() {
     // Shutdown Debug UI
+    mgfx_buffer_destroy(dbg_quad_vbh.idx);
+    mgfx_buffer_destroy(dbg_quad_ibh.idx);
+
     mgfx_texture_destroy(dbg_ui_font_atlas_th, MX_TRUE);
     mgfx_descriptor_destroy(dbg_ui_font_atlas_dh);
 
@@ -2719,11 +2819,10 @@ void mgfx_shutdown() {
 
     // Destroy vulkan renderer
     VK_CHECK(vkDeviceWaitIdle(s_device));
-    /*buffer_destroy(&s_image_staging_buffer);*/
 
-    buffer_destroy(&tsb_pool.buffer);
-    buffer_destroy(&tvb_pool.buffer);
-    buffer_destroy(&tib_pool.buffer);
+    buffer_destroy(&s_tsb_pool.buffer);
+    buffer_destroy(&s_tvb_pool.buffer);
+    buffer_destroy(&s_tib_pool.buffer);
 
     vkDestroyDescriptorPool(s_device, s_ds_pool, NULL);
 
@@ -2756,6 +2855,7 @@ void mgfx_shutdown() {
 }
 
 void mgfx_reset(uint32_t width, uint32_t height) {
+    MX_LOG_TRACE("Window resized to (%d, %d)", width, height);
     s_width = width;
     s_height = height;
 }

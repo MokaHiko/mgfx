@@ -8,31 +8,16 @@
 #include <mx/mx_log.h>
 #include <mx/mx_memory.h>
 
+#include <mx/mx_math.h>
+#include <mx/mx_math_mtx.h>
+
 #include <string.h>
-
-typedef struct vertex {
-    float position[3];
-    float uv_x;
-    float normal[3];
-    float uv_y;
-    float color[4];
-} vertex;
-
-static vertex k_vertices[] = {
-    {{-1.0f, -1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{1.0f, -1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{1.0f, 1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},   // Top-right
-    {{-1.0f, 1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}},  // Top-left
-};
-const size_t k_quad_vertex_count = sizeof(k_vertices) / sizeof(vertex);
-
-static uint32_t k_indices[] = {3, 2, 0, 2, 1, 0};
-const size_t k_quad_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
 typedef struct directional_light {
     struct {
         // TODO: make 4th number distance for dir light
-        float direction[4];
+        float direction[3];
+        float distance;
         float color[4];
 
         float light_space_matrix[16];
@@ -48,7 +33,8 @@ typedef struct point_light {
     float intensity;
 } point_light;
 
-directional_light dir_light = {.data = {.direction = {1.0f, -1.0f, 0.0f, 1.0f},
+directional_light dir_light = {.data = {.direction = {1.0f, -1.0f, 0.0f},
+                                        .distance = 1.0f,
                                         .color = {1.0f, 1.0f, 1.0f, 1.0f},
                                         .light_space_matrix = {0.0f}}};
 mgfx_ubh dir_lights_buffer;
@@ -164,8 +150,8 @@ void mgfx_example_init() {
     quad_fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
     blit_program = mgfx_program_create_graphics(vsh, quad_fsh);
 
-    quad_vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));
-    quad_ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
+    quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
+    quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     u_color_fba = mgfx_descriptor_create("u_diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     color_fba_texture = mgfx_texture_create_from_image(mesh_pass_color_attachment, VK_FILTER_LINEAR);
@@ -222,57 +208,30 @@ void draw_scene(
 }
 
 void mgfx_example_update() {
+    static float distance = 10.0f;
     static float angle = 0;
 
     if (mgfx_get_key(GLFW_KEY_E)) {
         angle += 3.1415925f * MGFX_TIME_DELTA_TIME;
-        MX_LOG_INFO("light pos: %.2f %.2f %.2f", dir_light.camera.position[0], dir_light.camera.position[1], dir_light.camera.position[2]);
-        MX_LOG_INFO("light dir: %.2f %.2f %.2f", dir_light.data.direction[0], dir_light.data.direction[1], dir_light.data.direction[2]);
     }
 
     if (mgfx_get_key(GLFW_KEY_R)) {
         angle -= 3.1415925f * MGFX_TIME_DELTA_TIME;
-        MX_LOG_INFO("light pos: %.2f %.2f %.2f", dir_light.camera.position[0], dir_light.camera.position[1], dir_light.camera.position[2]);
-        MX_LOG_INFO("light dir: %.2f %.2f %.2f", dir_light.data.direction[0], dir_light.data.direction[1], dir_light.data.direction[2]);
-    }
-
-    // Apply accumulated rotation
-    mat4 rotation_matrix;
-    glm_mat4_identity(rotation_matrix);
-
-    glm_rotate(rotation_matrix, angle, (vec3){0, 0, 1});
-    vec3 start_dir = {1.0f, -1.0f, 0.0f};
-    glm_mat4_mulv3(rotation_matrix, start_dir, 1.0f, dir_light.data.direction);
-
-    static float distance = 10.0f;
-    if(mgfx_get_key(GLFW_KEY_UP)) {
-        distance += 5.0f * MGFX_TIME_DELTA_TIME;
-        MX_LOG_INFO("Distance: %.2f", distance);
-    } else if(mgfx_get_key(GLFW_KEY_DOWN)) {
-        distance -= 5.0f * MGFX_TIME_DELTA_TIME;
-        MX_LOG_INFO("Distance: %.2f", distance);
-    }
-
-    static float screen_s = 10.0f;
-    if(mgfx_get_key(GLFW_KEY_PERIOD)) {
-        screen_s += 5.0f * MGFX_TIME_DELTA_TIME;
-        glm_ortho(-screen_s, screen_s, -screen_s, screen_s, 0.1f, 1000.0f, dir_light.camera.proj);
-        dir_light.camera.proj[1][1] *= -1;
-
-        camera_update(&dir_light.camera);
-        MX_LOG_INFO("ScreenS: %.2f", screen_s);
-    } else if (mgfx_get_key(GLFW_KEY_COMMA)) {
-        screen_s -= 5.0f * MGFX_TIME_DELTA_TIME;
-        glm_ortho(-screen_s, screen_s, -screen_s, screen_s, 0.1f, 1000.0f, dir_light.camera.proj);
-        dir_light.camera.proj[1][1] *= -1;
-
-        camera_update(&dir_light.camera);
-        MX_LOG_INFO("ScreenS: %.2f", screen_s);
     }
 
     // Transform the light direction
+    mat4 rotation_matrix;
+    glm_mat4_identity(rotation_matrix);
+
+    /*glm_rotate(rotation_matrix, angle, (vec3){1, 0, 1});*/
+    glm_rotate_at(rotation_matrix, (vec3){0, 0, 0}, angle, (vec3){1, 0, 1});
+
+    vec3 start_dir = {1.0f, -1.0f, 0.0f};
+    glm_mat4_mulv3(rotation_matrix, start_dir, 1.0f, dir_light.data.direction);
+
     glm_normalize(dir_light.data.direction);
     mgfx_buffer_update(dir_lights_buffer.idx, &dir_light.data, sizeof(dir_light.data), 0);
+
 
     // Update object transforms
     mat4 sponza_transform;
@@ -286,10 +245,10 @@ void mgfx_example_update() {
     glm_scale(helmet_transform, (vec3){0.5f, 0.5f, 0.5f});
 
     // Draw shadow pass
-    vec3 neg_dir = { 0.0f , 0.0f, 0.0f};
+    vec3 neg_dir = {0.0f, 0.0f, 0.0f};
     glm_vec3_negate_to(dir_light.data.direction, neg_dir);
 
-    vec3 light_pos = { 0.0f, 0.0f, 0.0f };
+    vec3 light_pos = {0.0f, 0.0f, 0.0f};
     glm_vec3_sub(neg_dir, GLM_VEC3_ZERO, light_pos);
     glm_vec3_scale(neg_dir, distance, light_pos);
 
@@ -299,11 +258,7 @@ void mgfx_example_update() {
     memcpy(dir_light.camera.forward, dir_light.data.direction, sizeof(float) * 3);
     camera_update(&dir_light.camera);
 
-    mat4 light_space_matrix;
-    glm_mat4_identity(light_space_matrix);
-
-    glm_mat4_mul(dir_light.camera.proj, dir_light.camera.view, light_space_matrix);
-    memcpy(dir_light.data.light_space_matrix, light_space_matrix[0], sizeof(float) * 16);
+    memcpy(dir_light.data.light_space_matrix, dir_light.camera.view_proj[0], sizeof(float) * 16);
 
     mgfx_set_proj(dir_light.camera.proj[0]);
     mgfx_set_view(dir_light.camera.view[0]);
@@ -330,8 +285,14 @@ void mgfx_example_update() {
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
 
-    // TODO: Fix descriptor draw gizmo
-    // mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
+    mgfx_debug_draw_text(0, 0, "distance: %.2f", distance);
+    mgfx_debug_draw_text(0,
+                         32,
+                         "light pos: %.2f %.2f %.2f",
+                         dir_light.camera.position[0],
+                         dir_light.camera.position[1],
+                         dir_light.camera.position[2]);
+    mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
 }
 
 void mgfx_example_shutdown() {

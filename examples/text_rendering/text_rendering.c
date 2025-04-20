@@ -15,11 +15,17 @@ void mgfx_example_update() {
         last_value = cur_value;
     }
 
-    mgfx_debug_draw_text(0, 0, "delta time: %.2f s", last_value * 1000.0f);
-    mgfx_debug_draw_text(0, 100, "fps : %u", (uint32_t)(1.0f / last_value));
+    /*mgfx_debug_draw_text(0, 100, "fps : %u", (uint32_t)(1.0f / last_value));*/
+    /*mgfx_debug_draw_text(APP_WIDTH / 2, APP_WIDTH / 2, "delta time: %.2f s", last_value * 1000.0f);*/
 
-    mgfx_debug_draw_text(0, 150, "MY BALLS!!");
-    mgfx_debug_draw_text(0, 250, "YOOO THAT'S CRAZY!");
+    mx_ivec2 position = {APP_WIDTH / 2, APP_HEIGHT / 2};
+    /*mx_ivec2 position = {5, 5};*/
+    /*mgfx_debug_draw_text(position[0], position[1], "(%d,%d)", position[0], position[1]);*/
+    mgfx_debug_draw_text(position[0], position[1], "apple"); 
+    mgfx_debug_draw_text(position[0], position[1] + 32, "orange"); 
+    mgfx_debug_draw_text(position[0], position[1] + 64, "banana");
+    mgfx_debug_draw_text(position[0], position[1] + 96, "mango");
+    mgfx_debug_draw_text(position[0], position[1] + 128, "guava"); 
 }
 
 void mgfx_example_shutdown() {}
