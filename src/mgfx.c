@@ -50,6 +50,7 @@ typedef struct mgfx_program {
         struct {
             int32_t primitive_topology; // VkPrimitiveTopology
             int32_t polygon_mode;       // VkPolygonMode
+            int32_t cull_mode;          // VkPolygonMode
         };
     };
 
@@ -885,7 +886,7 @@ void pipeline_create_graphics(const shader_vk* vs,
         .depthClampEnable = VK_FALSE,
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = (VkPolygonMode)program->polygon_mode,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .cullMode = (VkCullModeFlags)program->cull_mode,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
         .depthBiasConstantFactor = 0.0f,
@@ -1735,6 +1736,7 @@ mgfx_program_create_graphics_ex(mgfx_sh vsh, mgfx_sh fsh, const mgfx_graphics_ex
 
     entry->value.polygon_mode = ex_info->polygon_mode;
     entry->value.primitive_topology = ex_info->primitive_topology;
+    entry->value.cull_mode = ex_info->cull_mode;
 
     if (ex_info->instanced) {
     }
@@ -1748,6 +1750,7 @@ mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
     const mgfx_graphics_ex_create_info gfx_create_info = {
         .polygon_mode = VK_POLYGON_MODE_FILL,
         .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_BACK_BIT,
     };
 
     return mgfx_program_create_graphics_ex(vsh, fsh, &gfx_create_info);
@@ -1865,13 +1868,14 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
         .magFilter = filter,
         .minFilter = filter,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+
         /*.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,*/
         /*.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,*/
         /*.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,*/
-        /**/
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
         .mipLodBias = 0,
         .anisotropyEnable = VK_FALSE,
         .maxAnisotropy = 0,
@@ -1879,7 +1883,9 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
         .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0.0f,
         .maxLod = 1.0f,
-        .borderColor = 0,
+
+        /*.borderColor = 0,*/
+        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
         .unnormalizedCoordinates = 0,
     };
 

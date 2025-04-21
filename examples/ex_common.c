@@ -211,9 +211,11 @@ void camera_create(mgfx_camera_type type, camera* cam) {
                     .up = {0.0f, 1.0f, 0.0f},
                     .right = {1.0f, 0.0f, 0.0f}};
 
+    real_t ortho_s = 25.0f;
+    real_t inverse_fov = (9.0f / 16.0f);
     switch (type) {
     case mgfx_camera_type_orthographic:
-        glm_ortho(-15.0f, 15.0f, -15.0f, 15.0f, 0.1f, 1000.0f, cam->proj);
+        glm_ortho(-ortho_s, ortho_s, inverse_fov * -ortho_s, inverse_fov * ortho_s, -0.001f, 1000.0f, cam->proj);
         break;
     case mgfx_camera_type_perspective:
         glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 1000.0f, cam->proj);

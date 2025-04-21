@@ -29,16 +29,14 @@ point_light point_lights[] = point_light[](
     point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
     point_light(vec3(-5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
     point_light(vec3(0.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0)
-    // point_light(vec3(-10.0, 10.0, 4.0), vec3(0.7, 0.3, 0.3), 10.0),
-    // point_light(vec3(0.0, -10.0, 5.0), vec3(0.4, 0.2, 0.9), 5.0)
 );
 
 layout(set = 0, binding = 0) uniform directional_light {
-    vec3 direction;
-    float _pad1;  // Padding to align vec3 to 16 bytes
-    vec3 color;
-    float _pad2;  // Padding to align vec3 to 16 bytes
     mat4 light_space_matrix;
+    vec3 direction;
+    float distance;  // Padding to align vec3 to 16 bytes
+    vec3 color;
+    float _pad2;    // Padding to align vec3 to 16 bytes
 } dir_light;
 
 layout(set = 0, binding = 1) uniform sampler2D shadow_map;
@@ -106,7 +104,6 @@ void main() {
 
     vec3 albedo = pow(texture(albedo_map, v_uv).rgb, vec3(2.2));
     albedo *= albedo_factor;
-    //albedo *= v_color;
 
     float metallic = texture(metallic_roughness_map, v_uv).b;
     float roughness = texture(metallic_roughness_map, v_uv).g;
@@ -115,74 +112,91 @@ void main() {
 
     vec3 lo = vec3(0.0f);
 
-    for(int i = 0; i < POINT_LIGHT_COUNT; i++) {
-	    vec3 l = normalize(point_lights[i].position - world_position);
-	    vec3 h = normalize(v + l);
+    // for(int i = 0; i < POINT_LIGHT_COUNT; i++) {
+    //  vec3 l = normalize(point_lights[i].position - world_position);
+    //  vec3 h = normalize(v + l);
+    //
+    //  float distance = length(point_lights[i].position - world_position);
+    //  float attenuation = 1.0f / (distance * distance);
+    //  vec3 radiance = point_lights[i].color * attenuation;
+    //
+    //  // Specular factor
+    //  vec3 f0 = vec3(0.04); // surface reflection at 0
+    //  f0 = mix(f0, albedo, metallic);
+    //  vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+    //
+    //  float ndf = distribution_GGX(n, h, roughness);
+    //  float g = geometry_smith(n, v, l, roughness);
+    //
+    //  vec3 numerator = ndf * g * f;
+    //  float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
+    //  vec3 specular = numerator / denominator;
+    //
+    //  vec3 ks = f;
+    //  vec3 kd = vec3(1.0f) - ks;
+    //  kd *= (1.0f - metallic);
+    //
+    //  float lambertian_factor = max(dot(n,l), 0.0f);
+    //  lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
+    // }
 
-	    float distance = length(point_lights[i].position - world_position);
-	    float attenuation = 1.0f / (distance * distance);
-	    vec3 radiance = point_lights[i].color * attenuation;
-
-	    // Specular factor
-	    vec3 f0 = vec3(0.04); // surface reflection at 0
-	    f0 = mix(f0, albedo, metallic);
-	    vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
-
-	    float ndf = distribution_GGX(n, h, roughness);
-	    float g = geometry_smith(n, v, l, roughness);
-
-	    vec3 numerator = ndf * g * f;
-	    float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
-	    vec3 specular = numerator / denominator;
-
-	    vec3 ks = f;
-	    vec3 kd = vec3(1.0f) - ks;
-	    kd *= (1.0f - metallic);
-
-	    float lambertian_factor = max(dot(n,l), 0.0f);
-	    lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
-    }
-
+    // Directional light
     {
-	    vec3 l = normalize(-dir_light.direction);
-	    vec3 h = normalize(v + l);
+	vec3 l = normalize(-dir_light.direction);
+	vec3 h = normalize(v + l);
 
-	    vec3 radiance = dir_light.color;
+	vec3 radiance = dir_light.color;
 
-	    // Specular factor
-	    vec3 f0 = vec3(0.04); // surface reflection at 0
-	    f0 = mix(f0, albedo, metallic);
-	    vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+	// Specular factor
+	vec3 f0 = vec3(0.04); // surface reflection at 0
+	f0 = mix(f0, albedo, metallic);
+	vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
 
-	    float ndf = distribution_GGX(n, h, roughness);
-	    float g = geometry_smith(n, v, l, roughness);
+	float ndf = distribution_GGX(n, h, roughness);
+	float g = geometry_smith(n, v, l, roughness);
 
-	    vec3 numerator = ndf * g * f;
-	    float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
-	    vec3 specular = numerator / denominator;
+	vec3 numerator = ndf * g * f;
+	float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001;
+	vec3 specular = numerator / denominator;
 
-	    vec3 ks = f;
-	    vec3 kd = vec3(1.0f) - ks;
-	    kd *= (1.0f - metallic);
+	vec3 ks = f;
+	vec3 kd = vec3(1.0f) - ks;
+	kd *= (1.0f - metallic);
 
-	    float lambertian_factor = max(dot(n,l), 0.0f);
-	    lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
+	float lambertian_factor = max(dot(n,l), 0.0f);
+
+	// Shadow
+	// perform perspective divide
+	vec3 proj_coords = frag_pos_light_space.xyz / frag_pos_light_space.w;
+
+	// Store before normalizing
+	// get depth of current fragment from light's perspective // TODO: VULKAN ALREADY [0,1]
+	float current_depth = proj_coords.z;
+
+	// get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
+	proj_coords = proj_coords * 0.5f + 0.5f;
+
+	float shadow = 0.0f;
+
+	vec2 texel_size = 1.0f / textureSize(shadow_map, 0);
+	for(int x = -1; x <= 1; ++x) {
+	    for(int y = -1; y <= 1; ++y) {
+		float pcf_depth = texture(shadow_map, vec2(proj_coords.x, 1 - proj_coords.y) + texel_size * vec2(x,y)).r;
+		float bias = 0.0005f;
+		shadow += current_depth - bias > pcf_depth  ? 1.0f : 0.0f;
+	    }
+	}
+	shadow /= 9.0f;
+
+	if(current_depth > 1.0f) {
+	    shadow = 0.0f;
+	}
+
+	lo += (kd * albedo / PI + specular) * radiance * lambertian_factor * (1.0f - shadow);
     }
-
-    // Shadow
-    // perform perspective divide
-    vec3 projCoords = frag_pos_light_space.xyz / frag_pos_light_space.w;
-
-    // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
-    float closestDepth = texture(shadow_map, projCoords.xy).r; 
-    // get depth of current fragment from light's perspective
-    float currentDepth = projCoords.z;
-    // check whether current frag pos is in shadow
-    float shadow = currentDepth > closestDepth  ? 1.0 : 0.0;
-    lo *= (1.0f - shadow);
 
     // Ambient lighting
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = vec3(0.001) * albedo * ao;
     vec3 color = ambient + lo;
 
     // Emissive

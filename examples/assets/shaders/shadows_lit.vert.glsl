@@ -16,11 +16,11 @@ layout(location = 5) out flat vec3 cam_position;
 layout(location = 6) out mat3 TBN;
 
 layout(set = 0, binding = 0) uniform directional_light {
+	mat4 light_space_matrix;
 	vec3 direction;
-	float _pad1;  // Padding to align vec3 to 16 bytes
+	float distance;  // Padding to align vec3 to 16 bytes
 	vec3 color;
 	float _pad2;  // Padding to align vec3 to 16 bytes
-	mat4 light_space_matrix;
 } dir_light;
 
 layout(push_constant) uniform graphics_pc {
@@ -40,7 +40,8 @@ void main() {
 	TBN = mat3(t, b, v_normal);
 
 	world_position = (model * vec4(position, 1.0f)).xyz;
-	frag_pos_light_space = (dir_light.light_space_matrix * vec4(world_position, 1.0f));
+	// frag_pos_light_space = (dir_light.light_space_matrix * vec4(world_position, 1.0f));
+	frag_pos_light_space = (dir_light.light_space_matrix * model * vec4(position, 1.0f));
 
 	// TODO: send from cpu
 	//cam_position = view_inv[3].xyz;

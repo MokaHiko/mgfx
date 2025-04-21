@@ -145,7 +145,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
     for (size_t i = 0; i < data->buffers_count; i++) {
         buffers_size += data->buffers[i].size;
     }
-    size_t scene_allocator_size = (size_t)(buffers_size * 2);
+    size_t scene_allocator_size = (size_t)(buffers_size * 2.5);
     scene->allocator = mx_arena_alloc(scene_allocator_size);
 
     const char* file_name = strrchr(path, '/');
@@ -444,7 +444,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             }
 
             if(!has_color) {
-                MX_LOG_ERROR("NO COLOR");
+                MX_LOG_WARN("Mesh has no vertex colors.");
             }
 
             mesh_primitive->vbh = mgfx_vertex_buffer_create(mesh_primitive->vertices,
