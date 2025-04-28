@@ -33,7 +33,7 @@ typedef struct point_light {
 
 directional_light dir_light = {.data = {.direction = {3.0f, -8.0f, 3.0f},
                                         .distance = 1.0f,
-                                        .color = {255.0 / 255.0f, 232.0 / 255.0f, 179.0 / 255.0f, 1.0f},
+                                        .color = {100, 100, 100, 100.0f},
                                         .light_space_matrix = {0.0f}}};
 mgfx_ubh dir_lights_buffer;
 mgfx_dh u_dir_light;
@@ -90,7 +90,7 @@ void mgfx_example_init() {
     shadow_pass_fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_depth_attachment);
     mgfx_set_view_target(0, shadow_pass_fbh);
 
-    shadow_pass_vs = mgfx_shader_create("assets/shaders/shadows.vert.glsl.spv");
+    shadow_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows.vert.glsl.spv");
 
     const mgfx_graphics_ex_create_info shadow_pass_create_info = {
         .polygon_mode = VK_POLYGON_MODE_FILL,
@@ -125,8 +125,8 @@ void mgfx_example_init() {
     mesh_pass_fbh = mgfx_framebuffer_create(&mesh_pass_color_attachment, 1, mesh_pass_depth_attachment);
     mgfx_set_view_target(1, mesh_pass_fbh);
 
-    mesh_pass_vs = mgfx_shader_create("assets/shaders/shadows_lit.vert.glsl.spv");
-    mesh_pass_fs = mgfx_shader_create("assets/shaders/shadows_lit.frag.glsl.spv");
+    mesh_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.vert.glsl.spv");
+    mesh_pass_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.frag.glsl.spv");
     mesh_pass_program = mgfx_program_create_graphics(mesh_pass_vs, mesh_pass_fs);
 
     u_shadow_map = mgfx_descriptor_create("u_shadow_map", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -148,10 +148,14 @@ void mgfx_example_init() {
 
     sponza.vl = &vl;
     LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza);
+    /*load_scene_from_path(*/
+    /*    "/Users/christianmarkg.solon/Downloads/trees02/trees02.gltf", gltf_loader_flag_default, &sponza);*/
+    /*load_scene_from_path("/Users/christianmarkg.solon/Downloads/tree/tree.gltf", gltf_loader_flag_default,
+     * &sponza);*/
 
     // Blit pass
-    vsh = mgfx_shader_create("assets/shaders/blit.vert.glsl.spv");
-    quad_fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
+    vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");
+    quad_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.frag.glsl.spv");
     blit_program = mgfx_program_create_graphics(vsh, quad_fsh);
 
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));

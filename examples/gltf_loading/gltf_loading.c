@@ -51,8 +51,8 @@ void mgfx_example_init() {
     fbh = mgfx_framebuffer_create(&color_fba, 1, depth_fba);
     mgfx_set_view_target(0, fbh);
 
-    fp_vs = mgfx_shader_create("assets/shaders/lit.vert.glsl.spv");
-    fp_fs = mgfx_shader_create("assets/shaders/lit.frag.glsl.spv");
+    fp_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/lit.vert.glsl.spv");
+    fp_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/lit.frag.glsl.spv");
     fp_program = mgfx_program_create_graphics(fp_vs, fp_fs);
 
     mgfx_vertex_layout vl;
@@ -69,8 +69,8 @@ void mgfx_example_init() {
 
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &sponza);
 
-    quad_vsh = mgfx_shader_create("assets/shaders/blit.vert.glsl.spv");
-    quad_fsh = mgfx_shader_create("assets/shaders/blit.frag.glsl.spv");
+    quad_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");
+    quad_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.frag.glsl.spv");
     blit_program = mgfx_program_create_graphics(quad_vsh, quad_fsh);
 
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));

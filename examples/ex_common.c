@@ -342,13 +342,14 @@ int mgfx_example_app() {
     MGFX_DEFAULT_CUBE_VBH = mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices));
     MGFX_DEFAULT_CUBE_IBH = mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
-    MGFX_GIZMO_VSH = mgfx_shader_create("assets/shaders/gizmos.vert.glsl.spv");
-    MGFX_GIZMO_FSH = mgfx_shader_create("assets/shaders/gizmos.frag.glsl.spv");
+    MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
+    MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH"shaders/gizmos.frag.glsl.spv");
 
     const mgfx_graphics_ex_create_info gizmo_gfx_info = {
         .polygon_mode = VK_POLYGON_MODE_LINE,
         .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
+
     MGFX_GIZMO_PH = mgfx_program_create_graphics_ex(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH, &gizmo_gfx_info);
 
     mgfx_example_init();

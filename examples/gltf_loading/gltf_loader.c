@@ -76,16 +76,6 @@ static void mikk_set_tspace_basic(const SMikkTSpaceContext* ctx,
     tangent[3] = fsign;
 }
 
-void vertex_layout_begin(mgfx_vertex_layout* vl) { memset(vl, 0, sizeof(mgfx_vertex_layout)); }
-
-void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size) {
-    vl->attribute_offsets[attribute] = vl->stride;
-    vl->attribute_sizes[attribute] = size;
-    vl->stride += size;
-};
-
-void vertex_layout_end(mgfx_vertex_layout* vl) {}
-
 static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cgltf_node* node) {
     if (!node) {
         return;

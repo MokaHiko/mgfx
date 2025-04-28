@@ -80,8 +80,8 @@ void mat4_log(const mx_mat4 m) {
 };
 
 void mgfx_example_init() {
-    quad_vsh = mgfx_shader_create("assets/shaders/unlit.vert.glsl.spv");
-    fsh = mgfx_shader_create("assets/shaders/unlit.frag.glsl.spv");
+    quad_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.vert.glsl.spv");
+    fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.frag.glsl.spv");
     gfxph = mgfx_program_create_graphics(quad_vsh, fsh);
 
     vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));

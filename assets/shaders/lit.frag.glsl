@@ -172,9 +172,5 @@ void main() {
     // Emissive 
     color += emissive;
 
-    // Gamma correction
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0/2.2)); 
-
     frag_color = vec4(color, 1.0f);
 }

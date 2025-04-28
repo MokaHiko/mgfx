@@ -6,7 +6,7 @@
 
 #include <vulkan/vulkan_core.h>
 
-typedef struct mgfx_built_in_vertex {
+typedef struct MX_API mgfx_built_in_vertex {
     float position[3];
     float uv_x;
     float normal[3];
@@ -119,6 +119,11 @@ MGFX_HANDLE(mgfx_fbh)
  * @note Equivalent to VkImageView.
  */
 MGFX_HANDLE(mgfx_th)
+
+// Built in textures
+extern mgfx_th MGFX_WHITE_TEXTURE;
+extern mgfx_th MGFX_BLACK_TEXTURE;
+extern mgfx_th MGFX_LOCAL_NORMAL_TEXTURE;
 
 /**
  * @brief Renders debug text on the backbuffer.

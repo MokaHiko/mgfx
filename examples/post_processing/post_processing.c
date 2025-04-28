@@ -12,16 +12,13 @@
 #include <mx/mx_math_mtx.h>
 
 #include <string.h>
-#include <vulkan/vulkan_core.h>
 
 typedef struct directional_light {
     struct {
-        // TODO: make 4th number distance for dir light
+        float light_space_matrix[16];
         float direction[3];
         float distance;
         float color[4];
-
-        float light_space_matrix[16];
     } data;
 
     camera camera;
@@ -34,14 +31,12 @@ typedef struct point_light {
     float intensity;
 } point_light;
 
-directional_light dir_light = {.data = {.direction = {1.0f, -1.0f, 0.0f},
+directional_light dir_light = {.data = {.direction = {3.0f, -8.0f, 3.0f},
                                         .distance = 1.0f,
-                                        .color = {1.0f, 1.0f, 1.0f, 1.0f},
+                                        .color = {100, 100, 100, 100.0f},
                                         .light_space_matrix = {0.0f}}};
 mgfx_ubh dir_lights_buffer;
 mgfx_dh u_dir_light;
-
-// mgfx_ubh point_lights_buffer;
 
 mgfx_imgh shadow_pass_depth_attachment;
 mgfx_fbh shadow_pass_fbh;
@@ -75,6 +70,8 @@ void mgfx_example_init() {
     // Common
     camera_create(mgfx_camera_type_orthographic, &dir_light.camera);
 
+    mx_vec3_norm(dir_light.data.color, dir_light.data.color);
+
     dir_lights_buffer = mgfx_uniform_buffer_create(&dir_light.data, sizeof(dir_light.data));
     u_dir_light = mgfx_descriptor_create("u_dir_light", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     mgfx_set_buffer(u_dir_light, dir_lights_buffer);
@@ -82,8 +79,8 @@ void mgfx_example_init() {
     // Directional light shadow pass
     struct mgfx_image_info shadow_pass_depth_attachment_info = {
         .format = VK_FORMAT_D32_SFLOAT,
-        .width = APP_WIDTH,
-        .height = APP_HEIGHT,
+        .width = APP_WIDTH * 2,
+        .height = APP_HEIGHT * 2,
         .layers = 1,
     };
 
@@ -93,15 +90,20 @@ void mgfx_example_init() {
     shadow_pass_fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_depth_attachment);
     mgfx_set_view_target(0, shadow_pass_fbh);
 
-    shadow_pass_vs = mgfx_shader_create("assets/shaders/shadows.vert.glsl.spv");
-    shadow_pass_program = mgfx_program_create_graphics(shadow_pass_vs, (mgfx_sh){.idx = 0});
+    shadow_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows.vert.glsl.spv");
+
+    const mgfx_graphics_ex_create_info shadow_pass_create_info = {
+        .polygon_mode = VK_POLYGON_MODE_FILL,
+        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .cull_mode = VK_CULL_MODE_FRONT_BIT,
+    };
+    shadow_pass_program = mgfx_program_create_graphics_ex(shadow_pass_vs, (mgfx_sh){.idx = 0}, &shadow_pass_create_info);
 
     // Mesh pass
-    uint32_t pixel_factor = 6;
     struct mgfx_image_info color_attachment_info = {
         .format = VK_FORMAT_R16G16B16A16_SFLOAT,
-        .width = APP_WIDTH / pixel_factor,
-        .height = APP_HEIGHT / pixel_factor ,
+        .width = APP_WIDTH,
+        .height = APP_HEIGHT,
         .layers = 1,
     };
 
@@ -112,8 +114,8 @@ void mgfx_example_init() {
 
     struct mgfx_image_info depth_attachment_info = {
         .format = VK_FORMAT_D32_SFLOAT,
-        .width = APP_WIDTH / pixel_factor,
-        .height = APP_HEIGHT / pixel_factor,
+        .width = APP_WIDTH,
+        .height = APP_HEIGHT,
         .layers = 1,
     };
 
@@ -123,8 +125,8 @@ void mgfx_example_init() {
     mesh_pass_fbh = mgfx_framebuffer_create(&mesh_pass_color_attachment, 1, mesh_pass_depth_attachment);
     mgfx_set_view_target(1, mesh_pass_fbh);
 
-    mesh_pass_vs = mgfx_shader_create("assets/shaders/shadows_lit.vert.glsl.spv");
-    mesh_pass_fs = mgfx_shader_create("assets/shaders/shadows_lit.frag.glsl.spv");
+    mesh_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.vert.glsl.spv");
+    mesh_pass_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.frag.glsl.spv");
     mesh_pass_program = mgfx_program_create_graphics(mesh_pass_vs, mesh_pass_fs);
 
     u_shadow_map = mgfx_descriptor_create("u_shadow_map", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -145,19 +147,22 @@ void mgfx_example_init() {
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &helmet);
 
     sponza.vl = &vl;
-    /*LOAD_GLTF_MODEL("Lantern", gltf_loader_flag_default, &sponza);*/
-    load_scene_from_path("/Users/christianmarkg.solon/Downloads/tree/tree.gltf", gltf_loader_flag_default, &sponza);
+    LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza);
+    /*load_scene_from_path(*/
+    /*    "/Users/christianmarkg.solon/Downloads/trees02/trees02.gltf", gltf_loader_flag_default, &sponza);*/
+    /*load_scene_from_path("/Users/christianmarkg.solon/Downloads/tree/tree.gltf", gltf_loader_flag_default,
+     * &sponza);*/
 
     // Blit pass
-    vsh = mgfx_shader_create("assets/shaders/blit.vert.glsl.spv");
-    quad_fsh = mgfx_shader_create("assets/shaders/sprites.frag.glsl.spv");
+    vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");
+    quad_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.frag.glsl.spv");
     blit_program = mgfx_program_create_graphics(vsh, quad_fsh);
 
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
     quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     u_color_fba = mgfx_descriptor_create("u_diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    color_fba_texture = mgfx_texture_create_from_image(mesh_pass_color_attachment, VK_FILTER_NEAREST);
+    color_fba_texture = mgfx_texture_create_from_image(mesh_pass_color_attachment, VK_FILTER_LINEAR);
     mgfx_set_texture(u_color_fba, color_fba_texture);
 }
 
@@ -226,15 +231,13 @@ void mgfx_example_update() {
     mat4 rotation_matrix;
     glm_mat4_identity(rotation_matrix);
 
-    /*glm_rotate(rotation_matrix, angle, (vec3){1, 0, 1});*/
     glm_rotate_at(rotation_matrix, (vec3){0, 0, 0}, angle, (vec3){1, 0, 1});
 
-    vec3 start_dir = {1.0f, -1.0f, 0.0f};
+    static vec3 start_dir = {1.0f, -1.0f, 0.0f};
     glm_mat4_mulv3(rotation_matrix, start_dir, 1.0f, dir_light.data.direction);
 
     glm_normalize(dir_light.data.direction);
     mgfx_buffer_update(dir_lights_buffer.idx, &dir_light.data, sizeof(dir_light.data), 0);
-
 
     // Update object transforms
     mat4 sponza_transform;
@@ -295,6 +298,7 @@ void mgfx_example_update() {
                          dir_light.camera.position[0],
                          dir_light.camera.position[1],
                          dir_light.camera.position[2]);
+
     mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
 }
 
