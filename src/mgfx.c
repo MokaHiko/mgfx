@@ -10,16 +10,16 @@
 #include <mx/mx_hash.h>
 #include <mx/mx_memory.h>
 
-#include <vulkan/vulkan_core.h>
-
 #ifdef MX_MACOS
 #include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan_metal.h>
 #elif defined(MX_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#include <vulkan/vulkan_win32.h>
 #include <windows.h>
+#include <vulkan/vulkan_win32.h>
 #endif
+
+#include <vulkan/vulkan_core.h>
 
 #include "renderer_vk.h"
 
@@ -111,7 +111,7 @@ const VkDescriptorPoolSize k_ds_pool_sizes[] = {
     {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 128},
 };
 
-const uint32_t k_ds_pool_sizes_count = MX_ARRAY_COUNT(k_ds_pool_sizes);
+uint32_t k_ds_pool_sizes_count = 3;
 
 #ifdef MX_DEBUG
 VkResult create_debug_util_messenger_ext(VkInstance instance,
@@ -2879,35 +2879,7 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
 
     if (MX_FALSE) {
-        // Typical ortho
-        const real_t right = 10.0f;
-        const real_t top = 10.0f;
-        mx_mat4 proj = MX_MAT4_IDENTITY;
-        mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f, proj);
-        mgfx_set_proj(proj);
-
-        mx_mat4 model = MX_MAT4_IDENTITY;
-        static float yPos = top / 2.0f;
-        yPos += 0.01 * 1.0f;
-
-        mx_translate((mx_vec3){right / 2.0, yPos, -1.0}, model);
-        mgfx_set_transform(model);
-
-        mx_vec3 ui_cam_pos = {0, 0, 2};
-        mx_vec3 ui_inverse_pos = MX_VEC3_ZERO;
-        mx_vec3_scale(ui_cam_pos, -1.0f, ui_inverse_pos);
-
-        mx_mat4 view = MX_MAT4_IDENTITY;
-        mx_translate(ui_inverse_pos, view);
-        mgfx_set_view(view);
-
-        mgfx_bind_descriptor(0, dbg_ui_font_atlas_dh);
-
-        mgfx_bind_vertex_buffer(dbg_quad_vbh);
-        mgfx_bind_index_buffer(dbg_quad_ibh);
-
-        mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
-    }
+      }
 }
 
 void mgfx_shutdown() {
