@@ -9,14 +9,17 @@
 #include <mx/mx_file.h>
 #include <mx/mx_hash.h>
 #include <mx/mx_memory.h>
+#include <string.h>
 
 #ifdef MX_MACOS
 #include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan_metal.h>
 #elif defined(MX_WIN32)
 #define WIN32_LEAN_AND_MEAN
+// clang-format off
 #include <windows.h>
 #include <vulkan/vulkan_win32.h>
+// clang-format on
 #endif
 
 #include <vulkan/vulkan_core.h>
@@ -950,17 +953,22 @@ void pipeline_create_graphics(const shader_vk* vs,
         info.pDepthStencilState = NULL;
     }
 
-    VkPipelineColorBlendAttachmentState color_blend_attachment = {
-        .blendEnable = VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .colorBlendOp = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .alphaBlendOp = VK_BLEND_OP_ADD,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-    };
+    VkPipelineColorBlendAttachmentState
+        color_blend_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
+    for (uint32_t color_attachment_idx = 0; color_attachment_idx < fb->color_attachment_count;
+         color_attachment_idx++) {
+        color_blend_attachments[color_attachment_idx] = (VkPipelineColorBlendAttachmentState){
+            .blendEnable = VK_FALSE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+        };
+    }
 
     VkPipelineColorBlendStateCreateInfo color_blend_state_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -968,8 +976,8 @@ void pipeline_create_graphics(const shader_vk* vs,
         .flags = 0,
         .logicOpEnable = VK_FALSE,
         .logicOp = VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = &color_blend_attachment,
+        .attachmentCount = fb->color_attachment_count,
+        .pAttachments = color_blend_attachments,
     };
     info.pColorBlendState = &color_blend_state_info;
 
@@ -1285,6 +1293,7 @@ typedef struct framebuffer_entry {
 static framebuffer_entry* s_framebuffer_table;
 
 mgfx_fbh s_view_targets[0xFF];
+VkClearColorValue s_view_clears[0XFF] = {0};
 
 uint32_t s_width;
 uint32_t s_height;
@@ -1622,6 +1631,7 @@ int mgfx_init(const mgfx_init_info* info) {
     memset(s_view_targets, 0, sizeof(mgfx_fbh) * 0xFF);
 
     // Init mgfx
+    mgfx_set_view_clear(MGFX_DEFAULT_VIEW_TARGET, (float[4]){0.0f, 0.0f, 0.0f, 1.0f});
 
     // Init debug text
     dbg_ui_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/text.vert.glsl.spv");
@@ -2147,6 +2157,13 @@ void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh) {
     ++current_draw->desc_sets[ds_idx].dh_count;
 }
 
+void mgfx_set_view_clear(uint8_t target, float* color_4) {
+    MX_ASSERT(
+        target <= 0xFF,
+        "Attemping to set clear color for unknown target. Please call mgfx_set_view_target first");
+    memcpy(s_view_clears[target].float32, color_4, sizeof(float) * 4);
+}
+
 void mgfx_set_view_target(uint8_t target, mgfx_fbh fb) { s_view_targets[target] = fb; }
 
 void mgfx_set_transform(const float* mtx) { memcpy(s_current_transform, mtx, sizeof(float) * 16); }
@@ -2207,10 +2224,9 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
     memcpy(current_draw->draw_pc.proj, s_current_proj, sizeof(float) * 16);
 
     // TODO: Make ph.idx a uint16_t
-    // TODO: Sort by descriptors
-    current_draw->sort_key = ((uint64_t)(target) << 56) | // highest priority (view)
-                             ((uint64_t)(ph.idx) << 40);  // then shader program
-                                                          /*| ((uint64_t)(descriptors_hash) << 8);*/
+    current_draw->sort_key = ((uint64_t)(target) << 56) |         // highest priority (view)
+                             ((uint64_t)(ph.idx & 0xFFFF) << 40); // then shader program
+    /*| ((uint64_t)(descriptors_hash) << 8);*/
     ++s_draw_count;
 }
 
@@ -2390,14 +2406,13 @@ void mgfx_frame() {
                             VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_LAYOUT_GENERAL);
 
-    VkClearColorValue clear = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}};
     VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
     // Sort draws by view target, program, descriptor sets
     qsort(s_draws, (size_t)s_draw_count, sizeof(mgfx_draw), draw_compare_fn);
 
     framebuffer_vk* fb = NULL;
-    uint8_t target = 10;
+    uint8_t target = MGFX_DEFAULT_VIEW_TARGET - 1;
 
     VkDescriptorSet flat_ds[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     uint32_t flat_ds_count = 0;
@@ -2497,8 +2512,12 @@ void mgfx_frame() {
                                         VK_IMAGE_ASPECT_COLOR_BIT,
                                         VK_IMAGE_LAYOUT_GENERAL);
 
-                vk_cmd_clear_image(
-                    frame->cmd, fb->color_attachments[color_attachment_idx], &range, &clear);
+                if (s_view_clears[target].uint32[3]) {
+                    vk_cmd_clear_image(frame->cmd,
+                                       fb->color_attachments[color_attachment_idx],
+                                       &range,
+                                       &s_view_clears[target]);
+                }
             }
 
             if (fb->depth_attachment) {
@@ -2845,7 +2864,7 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     }
 
     // Typical ortho
-    // TODOL: Get from application
+    // TODO: Get from application
     s_width = 1280;
     s_height = 720;
     const real_t right = (real_t)s_width;
@@ -2877,9 +2896,6 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     mgfx_bind_descriptor(0, dbg_ui_font_atlas_dh);
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
-
-    if (MX_FALSE) {
-      }
 }
 
 void mgfx_shutdown() {

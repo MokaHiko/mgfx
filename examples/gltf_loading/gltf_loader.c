@@ -19,23 +19,30 @@ static int mikk_get_num_faces(const SMikkTSpaceContext* ctx) {
     return primitive->index_count / 3;
 }
 
-static int mikk_get_num_vertices_of_face(const SMikkTSpaceContext* ctx, const int iface) { return 3; }
+static int mikk_get_num_vertices_of_face(const SMikkTSpaceContext* ctx, const int iface) {
+    return 3;
+}
 
-static void
-mikk_get_position(const SMikkTSpaceContext* ctx, float fv_pos_out[], const int iface, const int ivert) {
+static void mikk_get_position(const SMikkTSpaceContext* ctx,
+                              float fv_pos_out[],
+                              const int iface,
+                              const int ivert) {
     const struct primitive* primitive = ctx->m_pUserData;
     const uint32_t idx = primitive->indices[iface * 3 + ivert];
 
     size_t offset = primitive->vl->stride * idx;
-    const float* position = (float*)(primitive->vertices + offset +
-                                     primitive->vl->attribute_offsets[MGFX_VERTEX_ATTRIBUTE_POSITION]);
+    const float* position =
+        (float*)(primitive->vertices + offset +
+                 primitive->vl->attribute_offsets[MGFX_VERTEX_ATTRIBUTE_POSITION]);
     fv_pos_out[0] = position[0];
     fv_pos_out[1] = position[1];
     fv_pos_out[2] = position[2];
 }
 
-static void
-mikk_get_normal(const SMikkTSpaceContext* ctx, float fv_norm_out[], const int iface, const int ivert) {
+static void mikk_get_normal(const SMikkTSpaceContext* ctx,
+                            float fv_norm_out[],
+                            const int iface,
+                            const int ivert) {
     const struct primitive* primitive = ctx->m_pUserData;
     const uint32_t idx = primitive->indices[iface * 3 + ivert];
 
@@ -47,8 +54,10 @@ mikk_get_normal(const SMikkTSpaceContext* ctx, float fv_norm_out[], const int if
     fv_norm_out[2] = normal[2];
 }
 
-static void
-mikk_get_tex_coord(const SMikkTSpaceContext* ctx, float fv_texc_out[], const int iface, const int ivert) {
+static void mikk_get_tex_coord(const SMikkTSpaceContext* ctx,
+                               float fv_texc_out[],
+                               const int iface,
+                               const int ivert) {
     const struct primitive* primitive = ctx->m_pUserData;
     const uint32_t idx = primitive->indices[iface * 3 + ivert];
 
@@ -76,7 +85,8 @@ static void mikk_set_tspace_basic(const SMikkTSpaceContext* ctx,
     tangent[3] = fsign;
 }
 
-static void gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cgltf_node* node) {
+static void
+gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cgltf_node* node) {
     if (!node) {
         return;
     }
@@ -159,7 +169,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
     if ((flags & gltf_loader_flag_materials) == gltf_loader_flag_materials) {
         for (size_t i = 0; i < data->materials_count; i++) {
             const cgltf_material* mat = &data->materials[i];
-            MX_LOG_INFO("(%u) Material: %s", mat - data->materials, mat->name ? mat->name : "<unamed>");
+            MX_LOG_INFO(
+                "(%u) Material: %s", mat - data->materials, mat->name ? mat->name : "<unamed>");
 
             // PBR
             if (mat->has_pbr_metallic_roughness) {
@@ -167,7 +178,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                        &mat->pbr_metallic_roughness.base_color_factor,
                        sizeof(vec3));
                 if (mat->pbr_metallic_roughness.base_color_texture.texture) {
-                    size_t tex_idx = mat->pbr_metallic_roughness.base_color_texture.texture - data->textures;
+                    size_t tex_idx =
+                        mat->pbr_metallic_roughness.base_color_texture.texture - data->textures;
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
@@ -184,21 +196,25 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     scene->materials[i].albedo_texture = s_default_white;
                 }
 
-                scene->materials[i].properties.metallic = mat->pbr_metallic_roughness.metallic_factor;
-                scene->materials[i].properties.roughness = mat->pbr_metallic_roughness.roughness_factor;
+                scene->materials[i].properties.metallic =
+                    mat->pbr_metallic_roughness.metallic_factor;
+                scene->materials[i].properties.roughness =
+                    mat->pbr_metallic_roughness.roughness_factor;
                 scene->materials[i].properties.ao = 1.0f;
 
-                scene->materials[i].properties.emissive = 1.0f;
+                memcpy(scene->materials[i].properties.emissive,
+                       mat->emissive_factor,
+                       sizeof(float) * 3);
+                scene->materials[i].properties.emissive_strength = 1.0f;
                 if (mat->has_emissive_strength) {
                     scene->materials[i].properties.emissive_strength =
                         mat->emissive_strength.emissive_strength;
-                } else {
-                    scene->materials[i].properties.emissive_strength = 1.0f;
                 }
 
                 if (mat->pbr_metallic_roughness.metallic_roughness_texture.texture) {
                     size_t tex_idx =
-                        mat->pbr_metallic_roughness.metallic_roughness_texture.texture - data->textures;
+                        mat->pbr_metallic_roughness.metallic_roughness_texture.texture -
+                        data->textures;
 
                     // Check if texture already loaded
                     if ((VkImageView)scene->textures[tex_idx].idx == VK_NULL_HANDLE) {
@@ -312,8 +328,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                 if (attribute->type == cgltf_attribute_type_position) {
                     mesh_primitive->vertex_count = attribute->data->count;
-                    mesh_primitive->vertices =
-                        mx_arena_push(&scene->allocator, mesh_primitive->vertex_count * vertex_size);
+                    mesh_primitive->vertices = mx_arena_push(
+                        &scene->allocator, mesh_primitive->vertex_count * vertex_size);
                     break;
                 }
             }
@@ -333,8 +349,9 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     continue;
                 }
 
-                const uint8_t* attrib_buffer = (uint8_t*)attribute->data->buffer_view->buffer->data +
-                                               attribute->data->buffer_view->offset + attribute->data->offset;
+                const uint8_t* attrib_buffer =
+                    (uint8_t*)attribute->data->buffer_view->buffer->data +
+                    attribute->data->buffer_view->offset + attribute->data->offset;
 
                 const uint32_t attrib_offset = scene->vl->attribute_offsets[attribute->type];
 
@@ -384,13 +401,15 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     mx_arena_push(&scene->allocator, primitive->indices->count * sizeof(uint32_t));
 
                 uint8_t* idx_buffer = (uint8_t*)primitive->indices->buffer_view->buffer->data +
-                                      primitive->indices->buffer_view->offset + primitive->indices->offset;
+                                      primitive->indices->buffer_view->offset +
+                                      primitive->indices->offset;
 
                 if (primitive->indices->component_type == cgltf_component_type_r_16u) {
                     for (int i = 0; i < primitive->indices->count; i++) {
                         int insert_index = i;
 
-                        if ((flags & gltf_loader_flag_flip_winding) == gltf_loader_flag_flip_winding) {
+                        if ((flags & gltf_loader_flag_flip_winding) ==
+                            gltf_loader_flag_flip_winding) {
                             insert_index = primitive->indices->count - 1 - i;
                         }
 
@@ -401,7 +420,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     for (int i = 0; i < primitive->indices->count; i++) {
                         int insert_index = i;
 
-                        if ((flags & gltf_loader_flag_flip_winding) == gltf_loader_flag_flip_winding) {
+                        if ((flags & gltf_loader_flag_flip_winding) ==
+                            gltf_loader_flag_flip_winding) {
                             insert_index = primitive->indices->count - 1 - i;
                         }
 
@@ -433,20 +453,21 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                 }
             }
 
-            if(!has_color) {
+            if (!has_color) {
                 MX_LOG_WARN("Mesh has no vertex colors.");
             }
 
-            mesh_primitive->vbh = mgfx_vertex_buffer_create(mesh_primitive->vertices,
-                                                            mesh_primitive->vertex_count * scene->vl->stride);
+            mesh_primitive->vbh = mgfx_vertex_buffer_create(
+                mesh_primitive->vertices, mesh_primitive->vertex_count * scene->vl->stride);
 
-            mesh_primitive->ibh = mgfx_index_buffer_create(mesh_primitive->indices,
-                                                           mesh_primitive->index_count * sizeof(uint32_t));
+            mesh_primitive->ibh = mgfx_index_buffer_create(
+                mesh_primitive->indices, mesh_primitive->index_count * sizeof(uint32_t));
 
             size_t primitive_size = (mesh_primitive->vertex_count * scene->vl->stride +
                                      mesh_primitive->index_count * sizeof(uint32_t));
 
-            MX_LOG_SUCCESS("Primitive (%lu) loaded: (%.2f kb)", primitive_idx, (float)primitive_size / MX_KB);
+            MX_LOG_SUCCESS(
+                "Primitive (%lu) loaded: (%.2f kb)", primitive_idx, (float)primitive_size / MX_KB);
         }
     }
 
@@ -468,29 +489,30 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         for (int mat_idx = 0; mat_idx < scene->material_count; mat_idx++) {
             mgfx_material* mat = &scene->materials[mat_idx];
 
-            mat->properties_buffer = mgfx_uniform_buffer_create(&mat->properties, sizeof(mat->properties));
+            mat->properties_buffer =
+                mgfx_uniform_buffer_create(&mat->properties, sizeof(mat->properties));
             mat->u_properties_buffer =
                 mgfx_descriptor_create("u_properties_buffer", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
             mgfx_set_buffer(mat->u_properties_buffer, mat->properties_buffer);
 
-            mat->u_albedo_texture =
-                mgfx_descriptor_create("u_albedo_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_albedo_texture = mgfx_descriptor_create(
+                "u_albedo_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_albedo_texture, mat->albedo_texture);
 
             mat->u_metallic_roughness_texture = mgfx_descriptor_create(
                 "u_metallic_roughness_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_metallic_roughness_texture, mat->metallic_roughness_texture);
 
-            mat->u_normal_texture =
-                mgfx_descriptor_create("u_normal_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_normal_texture = mgfx_descriptor_create(
+                "u_normal_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_normal_texture, mat->normal_texture);
 
-            mat->u_occlusion_texture =
-                mgfx_descriptor_create("u_occlusion_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_occlusion_texture = mgfx_descriptor_create(
+                "u_occlusion_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_occlusion_texture, mat->occlusion_texture);
 
-            mat->u_emissive_texture =
-                mgfx_descriptor_create("u_emissive_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            mat->u_emissive_texture = mgfx_descriptor_create(
+                "u_emissive_texture", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             mgfx_set_texture(mat->u_emissive_texture, mat->emissive_texture);
         }
     }
@@ -509,7 +531,8 @@ void scene_destroy(mgfx_scene* scene) {
     }
 
     for (uint32_t i = 0; i < scene->mesh_count; i++) {
-        for (size_t primitive_idx = 0; primitive_idx < scene->meshes[i].primitive_count; primitive_idx++) {
+        for (size_t primitive_idx = 0; primitive_idx < scene->meshes[i].primitive_count;
+             primitive_idx++) {
             mgfx_buffer_destroy(scene->meshes[i].primitives[primitive_idx].vbh.idx);
             mgfx_buffer_destroy(scene->meshes[i].primitives[primitive_idx].ibh.idx);
         }

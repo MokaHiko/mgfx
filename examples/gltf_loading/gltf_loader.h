@@ -22,9 +22,13 @@ typedef struct mgfx_material {
     struct properties {
         vec3 albedo;
         float metallic;
+
         float roughness;
         float ao;
-        float emissive;
+	float normal_factor;
+	float padding;
+
+        vec3 emissive;
         float emissive_strength;
     } properties;
     mgfx_ubh properties_buffer;

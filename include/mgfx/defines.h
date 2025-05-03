@@ -67,7 +67,7 @@ typedef MX_API struct mgfx_image_info {
     mx_bool cube_map;
 } mgfx_image_info;
 
-enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF };
+enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF - 1};
 
 typedef struct mgfx_transient_buffer {
     uint32_t size;

@@ -170,6 +170,7 @@ MX_API void mgfx_descriptor_destroy(mgfx_dh dh);
 MX_API void mgfx_set_buffer(mgfx_dh dh, mgfx_ubh ubh);
 MX_API void mgfx_set_texture(mgfx_dh dh, mgfx_th th);
 
+MX_API void mgfx_set_view_clear(uint8_t target, float* color_4);
 MX_API void mgfx_set_view_target(uint8_t target, mgfx_fbh fb);
 
 MX_API void mgfx_set_transform(const float* mtx);

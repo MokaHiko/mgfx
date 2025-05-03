@@ -50,6 +50,7 @@ void mgfx_example_init() {
 
     fbh = mgfx_framebuffer_create(&color_fba, 1, depth_fba);
     mgfx_set_view_target(0, fbh);
+    mgfx_set_view_clear(0, (float[]){0.0f, 0.0f, 0.0f, 1.0f});
 
     fp_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/lit.vert.glsl.spv");
     fp_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/lit.frag.glsl.spv");

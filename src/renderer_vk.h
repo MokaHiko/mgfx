@@ -12,22 +12,22 @@
 #include "mgfx/defines.h"
 
 #ifdef _MSC_VER
-#define VK_CHECK(call)                                                                                       \
-    do {                                                                                                     \
-        VkResult result = (call);                                                                            \
-        if (result != VK_SUCCESS) {                                                                          \
-            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);                   \
-            __debugbreak();                                                                                  \
-        }                                                                                                    \
+#define VK_CHECK(call)                                                                             \
+    do {                                                                                           \
+        VkResult result = (call);                                                                  \
+        if (result != VK_SUCCESS) {                                                                \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);         \
+            __debugbreak();                                                                        \
+        }                                                                                          \
     } while (0)
 #else
-#define VK_CHECK(call)                                                                                       \
-    do {                                                                                                     \
-        VkResult result = (call);                                                                            \
-        if (result != VK_SUCCESS) {                                                                          \
-            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);                   \
-            __builtin_trap();                                                                                \
-        }                                                                                                    \
+#define VK_CHECK(call)                                                                             \
+    do {                                                                                           \
+        VkResult result = (call);                                                                  \
+        if (result != VK_SUCCESS) {                                                                \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);         \
+            __builtin_trap();                                                                      \
+        }                                                                                          \
     } while (0)
 #endif
 
@@ -42,7 +42,9 @@ int choose_physical_device_vk(VkInstance instance,
                               VkPhysicalDevice* phys_device,
                               mx_arena* arena);
 
-void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, void* nwh, VkExtent2D* extent);
+void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps,
+                                void* nwh,
+                                VkExtent2D* extent);
 
 enum { MGFX_FRAME_0, MGFX_FRAME_1, MGFX_FRAME_COUNT };
 
@@ -98,7 +100,8 @@ typedef struct swapchain_vk {
     mx_bool resize;
 } swapchain_vk;
 
-int swapchain_create(VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain, mx_arena* arena);
+int swapchain_create(
+    VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain, mx_arena* arena);
 void swapchain_destroy(swapchain_vk* swapchain);
 
 typedef struct buffer_vk {

@@ -124,6 +124,7 @@ void mgfx_example_init() {
 
     mesh_pass_fbh = mgfx_framebuffer_create(&mesh_pass_color_attachment, 1, mesh_pass_depth_attachment);
     mgfx_set_view_target(1, mesh_pass_fbh);
+    mgfx_set_view_clear(1, (float[4]){0.0f, 0.0f, 0.0f, 1.0f});
 
     mesh_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.vert.glsl.spv");
     mesh_pass_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows_lit.frag.glsl.spv");
@@ -148,10 +149,6 @@ void mgfx_example_init() {
 
     sponza.vl = &vl;
     LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza);
-    /*load_scene_from_path(*/
-    /*    "/Users/christianmarkg.solon/Downloads/trees02/trees02.gltf", gltf_loader_flag_default, &sponza);*/
-    /*load_scene_from_path("/Users/christianmarkg.solon/Downloads/tree/tree.gltf", gltf_loader_flag_default,
-     * &sponza);*/
 
     // Blit pass
     vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");

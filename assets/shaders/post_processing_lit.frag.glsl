@@ -10,6 +10,7 @@ layout(location = 5) in flat vec3 cam_position;
 layout(location = 6) in mat3 TBN;
 
 layout(location = 0) out vec4 frag_color;
+layout(location = 1) out vec4 bright_color;
 
 const float PI = 3.14159265359;
 
@@ -36,7 +37,6 @@ layout(set = 0, binding = 0) uniform directional_light {
     vec3 direction;
     float distance;  // Padding to align vec3 to 16 bytes
     vec3 color;
-    float _pad2;    // Padding to align vec3 to 16 bytes
 } dir_light;
 
 layout(set = 0, binding = 1) uniform sampler2D shadow_map;
@@ -112,7 +112,8 @@ void main() {
     float metallic = texture(metallic_roughness_map, v_uv).b;
     float roughness = texture(metallic_roughness_map, v_uv).g;
     float ao = texture(occlusion_map, v_uv).r * ao_factor;
-    vec3 emissive = + pow(texture(emissive_map, v_uv).rgb, vec3(2.2)) * emissive_factor * emissive_strength;
+
+    vec3 emissive = pow(texture(emissive_map, v_uv).rgb, vec3(2.2)) * emissive_strength * emissive_factor * 1.25f;
 
     vec3 lo = vec3(0.0f);
 
@@ -200,11 +201,19 @@ void main() {
     }
 
     // Ambient lighting
-    vec3 ambient = vec3(0.001) * albedo * ao;
+    vec3 ambient = vec3(0.0025) * albedo * ao;
     vec3 color = ambient + lo;
 
     // Emissive
     color += emissive;
 
     frag_color = vec4(color, 1.0f);
+
+    // Hermite interpolation
+    float threshold = 1.0;
+    float knee = 0.5; // softness of the curve
+
+    float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    float bloom_factor = smoothstep(threshold, threshold + knee, brightness);
+    bright_color = vec4(color * bloom_factor, bloom_factor);
 }

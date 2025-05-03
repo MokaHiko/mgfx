@@ -45,9 +45,13 @@ directional_light directional_lights[] = directional_light[](
 layout(set = 0, binding = 0) uniform material {
 	vec3 albedo_factor;
 	float metallic_factor;
+
 	float roughness_factor;
 	float ao_factor;
-        float emissive_factor;
+	float normal_factor;
+	float padding;
+
+        vec3 emissive_factor;
         float emissive_strength;
 };
 
