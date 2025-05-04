@@ -65,39 +65,67 @@ typedef struct vertex {
 static mgfx_built_in_vertex k_cube_vertices[] = {
     // Front face
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},   // Top-right
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}},  // Top-left
+    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Back face
-    {{0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 1.0f, 1.0f}},  // Bottom-left
-    {{-0.5f, -0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-right
-    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},   // Top-left
+    {{0.5f, -0.5f, -0.5f},
+     0.0f,
+     {0.0f, 0.0f, -1.0f},
+     0.0f,
+     {1.0f, 0.0f, 1.0f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, -0.5f},
+     1.0f,
+     {0.0f, 0.0f, -1.0f},
+     0.0f,
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},  // Top-left
 
     // Left face
-    {{-0.5f, -0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{-0.5f, -0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},   // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}},  // Top-left
+    {{-0.5f, -0.5f, -0.5f},
+     0.0f,
+     {-1.0f, 0.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, 0.5f},
+     1.0f,
+     {-1.0f, 0.0f, 0.0f},
+     0.0f,
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
 
     // Right face
-    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}},  // Bottom-left
-    {{0.5f, -0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}},  // Top-right
-    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},   // Top-left
+    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     1.0f,
+     {1.0f, 0.0f, 0.0f},
+     0.0f,
+     {0.5f, 0.5f, 1.0f, 1.0f}},                                                      // Bottom right
+    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-left
 
     // Top face
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Bottom-left
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},   // Bottom-right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},  // Bottom-right
+    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
     {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Bottom face
-    {{-0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, -0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},   // Top-right
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}},  // Top-left
+    {{-0.5f, -0.5f, -0.5f},
+     0.0f,
+     {0.0f, -1.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     1.0f,
+     {0.0f, -1.0f, 0.0f},
+     0.0f,
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Top-right
+    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
 };
 static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(mgfx_built_in_vertex);
 
@@ -174,7 +202,9 @@ mgfx_th load_texture_2d_from_path(const char* path, VkFormat format) {
     return th;
 }
 
-static void window_resize_callback(GLFWwindow* window, int width, int height) { mgfx_reset(width, height); }
+static void window_resize_callback(GLFWwindow* window, int width, int height) {
+    mgfx_reset(width, height);
+}
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
@@ -215,7 +245,13 @@ void camera_create(mgfx_camera_type type, camera* cam) {
     real_t inverse_fov = (9.0f / 16.0f);
     switch (type) {
     case mgfx_camera_type_orthographic:
-        glm_ortho(-ortho_s, ortho_s, inverse_fov * -ortho_s, inverse_fov * ortho_s, -0.001f, 1000.0f, cam->proj);
+        glm_ortho(-ortho_s,
+                  ortho_s,
+                  inverse_fov * -ortho_s,
+                  inverse_fov * ortho_s,
+                  -0.001f,
+                  1000.0f,
+                  cam->proj);
         break;
     case mgfx_camera_type_perspective:
         glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 1000.0f, cam->proj);
@@ -343,14 +379,15 @@ int mgfx_example_app() {
     MGFX_DEFAULT_CUBE_IBH = mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
     MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
-    MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH"shaders/gizmos.frag.glsl.spv");
+    MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.frag.glsl.spv");
 
     const mgfx_graphics_ex_create_info gizmo_gfx_info = {
         .polygon_mode = VK_POLYGON_MODE_LINE,
         .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
 
-    MGFX_GIZMO_PH = mgfx_program_create_graphics_ex(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH, &gizmo_gfx_info);
+    MGFX_GIZMO_PH =
+        mgfx_program_create_graphics_ex(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH, &gizmo_gfx_info);
 
     mgfx_example_init();
 
@@ -361,12 +398,19 @@ int mgfx_example_app() {
         MGFX_TIME_DELTA_TIME = MGFX_TIME - last_time;
         last_time = MGFX_TIME;
 
-        if (mgfx_get_key(GLFW_KEY_LEFT_SHIFT)) {
+        if (mgfx_get_key(GLFW_KEY_LEFT_CONTROL)) {
+            if (mgfx_get_key(GLFW_KEY_Q)) {
+                break;
+            }
+        }
+
+        if (mgfx_get_key(GLFW_KEY_LEFT_SHIFT) || mgfx_get_key(GLFW_KEY_RIGHT_SHIFT)) {
             glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             editor_update(&g_example_camera);
 
             // TODO: Add quit ui button
             if (mgfx_get_key(GLFW_KEY_ESCAPE)) {
+                MX_LOG_INFO("Attempt quit");
                 break;
             }
         } else {

@@ -19,7 +19,7 @@ void main() {
 	hdr_color += texture(blur, v_uv).rgb;
 
 	// reinhard tone mapping
-	float exposure = 1.0f;
+	float exposure = 0.25;
 	vec3 mapped = vec3(1.0) - exp(-hdr_color * exposure);
 
 	// gamma correction 

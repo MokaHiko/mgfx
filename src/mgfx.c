@@ -996,16 +996,10 @@ void pipeline_create_graphics(const shader_vk* vs,
     int ds_count = 0;
 
     VkDescriptorSetLayoutBinding
-        flat_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
-    memset(flat_bindings,
-           0,
-           sizeof(VkDescriptorSetLayoutBinding) * MGFX_SHADER_MAX_DESCRIPTOR_SET *
-               MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
+        flat_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {0};
 
-    uint32_t max_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING];
-    memset(max_bindings,
-           0,
-           sizeof(uint32_t) * MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
+    uint32_t max_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {
+        0};
 
     VkDescriptorSetLayout ds_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     memset(ds_layouts, 0, sizeof(VkDescriptorSetLayout) * MGFX_SHADER_MAX_DESCRIPTOR_SET);
@@ -1016,7 +1010,7 @@ void pipeline_create_graphics(const shader_vk* vs,
 
     // Resolve multi stage descriptor bindings
     for (int stage_idx = 0; stage_idx < 2; stage_idx++) {
-        const shader_vk* shader = stage_idx == 0 ? vs : fs;
+        const shader_vk* shader = (stage_idx == 0) ? vs : fs;
 
         if (shader == NULL) {
             continue;
@@ -1031,19 +1025,29 @@ void pipeline_create_graphics(const shader_vk* vs,
                 continue;
             };
 
-            for (uint32_t binding = 0; binding < ds->binding_count; binding++) {
+            uint32_t binding = 0;
+            for (int processed_bindings = 0; processed_bindings < ds->binding_count; binding++) {
+                MX_ASSERT(binding < MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
+
+                // Skip unbound bindings
+                if (ds->bindings[binding].stageFlags == 0) {
+                    continue;
+                };
+
                 max_bindings[ds_idx] =
                     binding > max_bindings[ds_idx] ? binding : max_bindings[ds_idx];
 
-                VkDescriptorSetLayoutBinding* ds_bindings =
+                VkDescriptorSetLayoutBinding* ds_binding =
                     &flat_bindings[ds_idx * MGFX_SHADER_MAX_DESCRIPTOR_BINDING + binding];
 
-                if (ds_bindings->stageFlags != 0) {
-                    ds_bindings->stageFlags |=
+                if (ds_binding->stageFlags != 0) {
+                    ds_binding->stageFlags |=
                         stage_idx == 0 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
                 } else {
-                    *ds_bindings = ds->bindings[binding];
+                    *ds_binding = ds->bindings[binding];
                 }
+
+                processed_bindings++;
             }
         }
 
@@ -1962,9 +1966,12 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
         /*.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,*/
         /*.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,*/
 
+        // Shadow
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+        /*.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,*/
+
         .mipLodBias = 0,
         .anisotropyEnable = VK_FALSE,
         .maxAnisotropy = 0,
@@ -1973,8 +1980,7 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
         .minLod = 0.0f,
         .maxLod = 1.0f,
 
-        /*.borderColor = 0,*/
-        .borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+        .borderColor = 0,
         .unnormalizedCoordinates = 0,
     };
 
@@ -2864,7 +2870,7 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     }
 
     // Typical ortho
-    // TODO: Get from application
+    // TODOL: Get from application
     s_width = 1280;
     s_height = 720;
     const real_t right = (real_t)s_width;

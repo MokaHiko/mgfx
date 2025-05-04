@@ -13,24 +13,6 @@ layout(location = 0) out vec4 frag_color;
 
 const float PI = 3.14159265359;
 
-struct point_light {
-    vec3 position;
-    vec3 color;
-    float intensity;
-};
-
-const int POINT_LIGHT_COUNT = 3;
-point_light point_lights[] = point_light[](
-    // HDR.
-    // point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0) * 255.0, 5.0),
-    // point_light(vec3(-10.0, 10.0, 4.0), vec3(0.7, 0.3, 0.3) * 255.0, 10.0),
-    // point_light(vec3(0.0, -10.0, 5.0), vec3(160.0, 32.0, 240.0), 5.0)
-
-    point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
-    point_light(vec3(-5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
-    point_light(vec3(0.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0)
-);
-
 layout(set = 0, binding = 0) uniform directional_light {
     mat4 light_space_matrix;
     vec3 direction;
@@ -115,34 +97,6 @@ void main() {
     vec3 emissive = + pow(texture(emissive_map, v_uv).rgb, vec3(2.2)) * emissive_factor * emissive_strength;
 
     vec3 lo = vec3(0.0f);
-
-    // for(int i = 0; i < POINT_LIGHT_COUNT; i++) {
-    //  vec3 l = normalize(point_lights[i].position - world_position);
-    //  vec3 h = normalize(v + l);
-    //
-    //  float distance = length(point_lights[i].position - world_position);
-    //  float attenuation = 1.0f / (distance * distance);
-    //  vec3 radiance = point_lights[i].color * attenuation;
-    //
-    //  // Specular factor
-    //  vec3 f0 = vec3(0.04); // surface reflection at 0
-    //  f0 = mix(f0, albedo, metallic);
-    //  vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
-    //
-    //  float ndf = distribution_GGX(n, h, roughness);
-    //  float g = geometry_smith(n, v, l, roughness);
-    //
-    //  vec3 numerator = ndf * g * f;
-    //  float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
-    //  vec3 specular = numerator / denominator;
-    //
-    //  vec3 ks = f;
-    //  vec3 kd = vec3(1.0f) - ks;
-    //  kd *= (1.0f - metallic);
-    //
-    //  float lambertian_factor = max(dot(n,l), 0.0f);
-    //  lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
-    // }
 
     // Directional light
     {

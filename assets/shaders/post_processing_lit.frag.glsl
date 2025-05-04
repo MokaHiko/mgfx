@@ -20,26 +20,29 @@ struct point_light {
     float intensity;
 };
 
-const int POINT_LIGHT_COUNT = 3;
-point_light point_lights[] = point_light[](
-    // HDR.
-    // point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0) * 255.0, 5.0),
-    // point_light(vec3(-10.0, 10.0, 4.0), vec3(0.7, 0.3, 0.3) * 255.0, 10.0),
-    // point_light(vec3(0.0, -10.0, 5.0), vec3(160.0, 32.0, 240.0), 5.0)
+// Scene data
+const int MAX_POINT_LIGHTS = 64;
 
-    point_light(vec3(5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
-    point_light(vec3(-5.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0),
-    point_light(vec3(0.0, 5.0, 0.0), vec3(1.0, 1.0, 1.0), 5.0)
-);
+layout(set = 0, binding = 0) uniform scene_data {
+    uint point_light_count;
+    uint dir_light_count;
 
-layout(set = 0, binding = 0) uniform directional_light {
+    uint post_processing;
+    uint _padding;
+};
+
+layout(set = 0, binding = 1) uniform directional_light {
     mat4 light_space_matrix;
     vec3 direction;
-    float distance;  // Padding to align vec3 to 16 bytes
+    float distance;
     vec3 color;
 } dir_light;
 
-layout(set = 0, binding = 1) uniform sampler2D shadow_map;
+layout(std140, set = 0, binding = 2) uniform point_lights_buffer {
+    point_light point_lights[MAX_POINT_LIGHTS];
+};
+
+layout(set = 0, binding = 3) uniform sampler2D shadow_map;
 
 layout(set = 1, binding = 0) uniform material {
 	vec3 albedo_factor;
@@ -117,36 +120,36 @@ void main() {
 
     vec3 lo = vec3(0.0f);
 
-    // for(int i = 0; i < POINT_LIGHT_COUNT; i++) {
-    //  vec3 l = normalize(point_lights[i].position - world_position);
-    //  vec3 h = normalize(v + l);
-    //
-    //  float distance = length(point_lights[i].position - world_position);
-    //  float attenuation = 1.0f / (distance * distance);
-    //  vec3 radiance = point_lights[i].color * attenuation;
-    //
-    //  // Specular factor
-    //  vec3 f0 = vec3(0.04); // surface reflection at 0
-    //  f0 = mix(f0, albedo, metallic);
-    //  vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
-    //
-    //  float ndf = distribution_GGX(n, h, roughness);
-    //  float g = geometry_smith(n, v, l, roughness);
-    //
-    //  vec3 numerator = ndf * g * f;
-    //  float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
-    //  vec3 specular = numerator / denominator;
-    //
-    //  vec3 ks = f;
-    //  vec3 kd = vec3(1.0f) - ks;
-    //  kd *= (1.0f - metallic);
-    //
-    //  float lambertian_factor = max(dot(n,l), 0.0f);
-    //  lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
-    // }
+    for(int i = 0; i < point_light_count; i++) {
+	 vec3 l = normalize(point_lights[i].position - world_position);
+	 vec3 h = normalize(v + l);
+
+	 float distance = length(point_lights[i].position - world_position);
+	 float attenuation = 1.0f / (distance * distance);
+	 vec3 radiance = point_lights[i].color * attenuation;
+
+	 // Specular factor
+	 vec3 f0 = vec3(0.04); // surface reflection at 0
+	 f0 = mix(f0, albedo, metallic);
+	 vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+
+	 float ndf = distribution_GGX(n, h, roughness);
+	 float g = geometry_smith(n, v, l, roughness);
+
+	 vec3 numerator = ndf * g * f;
+	 float denominator = 4 * max(dot(n, v), 0.0) * max(dot(n, l), 0.0)  + 0.0001; 
+	 vec3 specular = numerator / denominator;
+
+	 vec3 ks = f;
+	 vec3 kd = vec3(1.0f) - ks;
+	 kd *= (1.0f - metallic);
+
+	 float lambertian_factor = max(dot(n,l), 0.0f);
+	 lo += (kd * albedo / PI + specular) * radiance * lambertian_factor;
+    }
 
     // Directional light
-    {
+    for(int i = 0; i < dir_light_count; i++) {
 	vec3 l = normalize(-dir_light.direction);
 	vec3 h = normalize(v + l);
 
@@ -201,7 +204,7 @@ void main() {
     }
 
     // Ambient lighting
-    vec3 ambient = vec3(0.0025) * albedo * ao;
+    vec3 ambient = vec3(0.001) * albedo * ao;
     vec3 color = ambient + lo;
 
     // Emissive
@@ -215,5 +218,5 @@ void main() {
 
     float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
     float bloom_factor = smoothstep(threshold, threshold + knee, brightness);
-    bright_color = vec4(color * bloom_factor, bloom_factor);
+    bright_color = vec4(color * bloom_factor, bloom_factor) * min(1.0f, length(emissive.rgb));
 }

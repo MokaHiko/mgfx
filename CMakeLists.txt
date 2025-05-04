@@ -62,6 +62,7 @@ if(MGFX_BUILD_EXAMPLES)
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/skybox.frag.glsl
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/post_processing_lit.vert.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/post_processing_lit.frag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/post_processing_blit.frag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blur.frag.glsl
