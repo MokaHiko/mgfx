@@ -4,7 +4,7 @@ project(mgfx_examples VERSION 1.0 LANGUAGES C)
 include(FetchContent)
 
 FetchContent_Declare(
-    glf
+    glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
 )
