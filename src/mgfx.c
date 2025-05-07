@@ -933,8 +933,9 @@ void pipeline_create_graphics(const shader_vk* vs,
     };
     info.pMultisampleState = &multisample_state_info;
 
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state_info = {0};
     if (fb->depth_attachment) {
-        VkPipelineDepthStencilStateCreateInfo depth_stencil_state_info = {
+        depth_stencil_state_info = (VkPipelineDepthStencilStateCreateInfo){
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
@@ -948,10 +949,23 @@ void pipeline_create_graphics(const shader_vk* vs,
             .minDepthBounds = 0.0f,
             .maxDepthBounds = 1.0f,
         };
-        info.pDepthStencilState = &depth_stencil_state_info;
     } else {
-        info.pDepthStencilState = NULL;
+        depth_stencil_state_info = (VkPipelineDepthStencilStateCreateInfo){
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .depthTestEnable = VK_FALSE,
+            .depthWriteEnable = VK_FALSE,
+            .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+            .depthBoundsTestEnable = VK_FALSE,
+            .stencilTestEnable = VK_FALSE,
+            .front = {0},
+            .back = {0},
+            .minDepthBounds = 0.0f,
+            .maxDepthBounds = 1.0f,
+        };
     }
+    info.pDepthStencilState = &depth_stencil_state_info;
 
     VkPipelineColorBlendAttachmentState
         color_blend_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
@@ -1131,12 +1145,12 @@ mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain
         swapchain_destroy(&s_swapchain);
 
         if (s_surface_caps.currentExtent.width == UINT32_MAX) {
-            width = (int)mx_clampf((float)width,
-                                   (float)s_surface_caps.minImageExtent.width,
-                                   (float)s_surface_caps.maxImageExtent.width);
-            height = (int)mx_clampf((float)height,
-                                    (float)s_surface_caps.minImageExtent.height,
-                                    (float)s_surface_caps.maxImageExtent.height);
+            width = (int)mx_clamp((float)width,
+                                  (float)s_surface_caps.minImageExtent.width,
+                                  (float)s_surface_caps.maxImageExtent.width);
+            height = (int)mx_clamp((float)height,
+                                   (float)s_surface_caps.minImageExtent.height,
+                                   (float)s_surface_caps.maxImageExtent.height);
         }
 
         swapchain_create(s_surface, width, height, &s_swapchain, NULL);
@@ -2783,6 +2797,7 @@ void mgfx_frame() {
 
 // Debug tools
 void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
+    // TODO: Add all to single buffer or commands at end of regular draws.
     char word_buffer[MGFX_DEBUG_MAX_TEXT];
     memset(word_buffer, 0, sizeof(word_buffer));
 
@@ -2875,21 +2890,16 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     s_height = 720;
     const real_t right = (real_t)s_width;
     const real_t top = (real_t)s_height;
-    mx_mat4 proj = MX_MAT4_IDENTITY;
-    mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f, proj);
-    mgfx_set_proj(proj);
+    mgfx_set_proj(mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f).val);
 
     mx_vec3 ui_cam_pos = {0, 0, 2};
-    mx_vec3 ui_inverse_pos = MX_VEC3_ZERO;
-    mx_vec3_scale(ui_cam_pos, -1.0f, ui_inverse_pos);
+    mx_vec3 ui_inverse_pos = mx_vec3_scale(ui_cam_pos, -1.0f);
 
-    mx_mat4 view = MX_MAT4_IDENTITY;
-    mx_translate(ui_inverse_pos, view);
-    mgfx_set_view(view);
+    mx_mat4 view = mx_translate(ui_inverse_pos);
+    mgfx_set_view(view.val);
 
-    mx_mat4 model = MX_MAT4_IDENTITY;
-    mx_translate((mx_vec3){(float)x, (float)y, -1.0}, model);
-    mgfx_set_transform(model);
+    mx_mat4 model = mx_translate((mx_vec3){(float)x, (float)y, -1.0});
+    mgfx_set_transform(model.val);
 
     mgfx_transient_buffer tvb = {0};
     mgfx_transient_vertex_buffer_allocate(vertices, vertex_count * sizeof(glyph_vertex), &tvb);

@@ -5,6 +5,10 @@
 
 #define MGFX_SUCCESS ((uint16_t)0)
 
+#ifdef __cplusplus
+extern "C" { // Ensure C++ linkage compatibility
+#endif
+
 // TODO: Remove
 typedef enum mgfx_allocation_type {
     MGFX_ALLOCATION_TYPE_UNKNOWN = 0,
@@ -82,5 +86,9 @@ typedef struct mgfx_graphics_ex_create_info {
 
     mx_bool instanced;
 } mgfx_graphics_ex_create_info;
+
+#ifdef __cplusplus
+} // End extern "C"
+#endif
 
 #endif

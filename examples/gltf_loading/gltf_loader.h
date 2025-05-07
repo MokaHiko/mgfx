@@ -1,10 +1,10 @@
 #ifndef MGFX_EXAMPLE_GLTF_H_
 #define MGFX_EXAMPLE_GLTF_H_
 
-#include <cglm/cglm.h>
-
-#include <mx/mx.h>
 #include <mgfx/mgfx.h>
+#include <mx/mx.h>
+#include <mx/mx_math_types.h>
+#include <mx/mx_math_mtx.h>
 #include <mx/mx_memory.h>
 
 typedef enum mgfx_material_flags {
@@ -20,15 +20,15 @@ typedef enum mgfx_material_flags {
 
 typedef struct mgfx_material {
     struct properties {
-        vec3 albedo;
+        mx_vec3 albedo;
         float metallic;
 
         float roughness;
         float ao;
-	float normal_factor;
-	float padding;
+        float normal_factor;
+        float padding;
 
-        vec3 emissive;
+        mx_vec3 emissive;
         float emissive_strength;
     } properties;
     mgfx_ubh properties_buffer;
@@ -72,7 +72,8 @@ typedef struct mgfx_mesh {
 
 enum { MGFX_NODE_MAX_PRIMITIVES = 32 };
 typedef struct mgfx_node {
-    mat4 matrix;
+    // global matrix
+    mx_mat4 matrix;
     const mgfx_mesh* mesh;
 } mgfx_node;
 
@@ -98,7 +99,7 @@ typedef struct mgfx_scene {
     uint32_t mesh_count;
 
     const mgfx_vertex_layout* vl;
-    mx_arena allocator;
+    /*mx_arena allocator;*/
 } mgfx_scene;
 
 typedef enum gltf_loader_flags {
@@ -106,7 +107,8 @@ typedef enum gltf_loader_flags {
     gltf_loader_flag_materials = 1 << 1,
     gltf_loader_flag_meshes = 1 << 2,
 
-    gltf_loader_flag_default = gltf_loader_flag_textures | gltf_loader_flag_materials | gltf_loader_flag_meshes,
+    gltf_loader_flag_default =
+        gltf_loader_flag_textures | gltf_loader_flag_materials | gltf_loader_flag_meshes,
 
     gltf_loader_flag_flip_winding = 1 << 3,
 
@@ -116,7 +118,8 @@ typedef enum gltf_loader_flags {
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene);
 void scene_destroy(mgfx_scene* scene);
 
-#define LOAD_GLTF_MODEL(model_name, gltf_flags, gltf_ptr)                                   \
-    load_scene_from_path(GLTF_MODELS_PATH model_name "/glTF/" model_name ".gltf", gltf_flags, gltf_ptr)
+#define LOAD_GLTF_MODEL(model_name, gltf_flags, gltf_ptr)                                          \
+    load_scene_from_path(                                                                          \
+        GLTF_MODELS_PATH model_name "/glTF/" model_name ".gltf", gltf_flags, gltf_ptr)
 
 #endif

@@ -86,7 +86,7 @@ static void mikk_set_tspace_basic(const SMikkTSpaceContext* ctx,
 }
 
 static void
-gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cgltf_node* node) {
+gltf_process_node(const cgltf_data* gltf, mx_mat4 parent_mtx, mgfx_scene* scene, cgltf_node* node) {
     if (!node) {
         return;
     }
@@ -94,24 +94,34 @@ gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cg
     const size_t vertex_size = scene->vl->stride;
     mgfx_node* scene_node = &scene->nodes[scene->node_count++];
 
+    mx_mat4 local = MX_MAT4_IDENTITY;
     if (node->has_matrix) {
-        memcpy(scene_node->matrix, node->matrix, sizeof(mat4));
+        memcpy(local.val, node->matrix, sizeof(mx_mat4));
     } else {
-        glm_mat4_identity(scene_node->matrix);
-        glm_translate(scene_node->matrix, node->translation);
+        mx_mat4 translate = mx_translate((mx_vec3){
+            .x = node->translation[0],
+            .y = node->translation[1],
+            .z = node->translation[2],
+        });
 
-        mat4 rotation_mtx;
-        glm_mat4_identity(rotation_mtx);
+        mx_mat4 rotate = mx_quat_mat4((mx_quat){
+            .x = node->rotation[0],
+            .y = node->rotation[1],
+            .z = node->rotation[2],
+            .w = node->rotation[3],
+        });
 
-#ifdef MX_MACOS
-        glm_quat_mat4(node->rotation, rotation_mtx);
-#endif
-        glm_mat4_mul(scene_node->matrix, rotation_mtx, scene_node->matrix);
+        mx_mat4 scale = mx_scale((mx_vec3){
+            .x = node->scale[0],
+            .y = node->scale[1],
+            .z = node->scale[2],
+        });
 
-        glm_scale(scene_node->matrix, node->scale);
+        local = mx_mat4_mul(mx_mat4_mul(translate, rotate), scale);
     }
 
-    glm_mat4_mul(parent_mtx, scene_node->matrix, scene_node->matrix);
+    // Calculate global
+    scene_node->matrix = mx_mat4_mul(parent_mtx, local);
 
     if (node->mesh) {
         scene_node->mesh = &scene->meshes[node->mesh - gltf->meshes];
@@ -122,8 +132,16 @@ gltf_process_node(const cgltf_data* gltf, mat4 parent_mtx, mgfx_scene* scene, cg
     }
 };
 
+static uint8_t scene_memory_arena[15 * MX_MB];
+
 #define MGFX_MAX_DIR_LEN 256
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene) {
+    mx_allocator_t temp_mem = mx_make_allocator((mx_arena){
+        .data = scene_memory_arena,
+        .head = 0,
+        .len = sizeof(scene_memory_arena),
+    });
+
     cgltf_options options = {0};
     cgltf_data* data = NULL;
 
@@ -138,15 +156,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         MX_LOG_ERROR("Failed to load buffers at path: %s", path);
         exit(-1);
     }
-
-    // TODO: Estimate properly
-    // Allocate memory for scene
-    size_t buffers_size = 0;
-    for (size_t i = 0; i < data->buffers_count; i++) {
-        buffers_size += data->buffers[i].size;
-    }
-    size_t scene_allocator_size = (size_t)(buffers_size * 2.5);
-    scene->allocator = mx_arena_alloc(scene_allocator_size);
 
     const char* file_name = strrchr(path, '/');
     const size_t dir_len = file_name - path;
@@ -176,7 +185,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             if (mat->has_pbr_metallic_roughness) {
                 memcpy(&scene->materials[i].properties.albedo,
                        &mat->pbr_metallic_roughness.base_color_factor,
-                       sizeof(vec3));
+                       sizeof(mx_vec3));
                 if (mat->pbr_metallic_roughness.base_color_texture.texture) {
                     size_t tex_idx =
                         mat->pbr_metallic_roughness.base_color_texture.texture - data->textures;
@@ -202,7 +211,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     mat->pbr_metallic_roughness.roughness_factor;
                 scene->materials[i].properties.ao = 1.0f;
 
-                memcpy(scene->materials[i].properties.emissive,
+                memcpy(scene->materials[i].properties.emissive.elements,
                        mat->emissive_factor,
                        sizeof(float) * 3);
                 scene->materials[i].properties.emissive_strength = 1.0f;
@@ -296,6 +305,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         MX_LOG_ERROR("%s has more meshes than MGFX_SCENE_MAX_MESHES!", file_name);
         exit(-1);
     }
+
     scene->mesh_count = data->meshes_count;
     for (size_t mesh_idx = 0; mesh_idx < data->meshes_count; mesh_idx++) {
         const cgltf_mesh* mesh = &data->meshes[mesh_idx];
@@ -326,10 +336,10 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             for (size_t attrib_idx = 0; attrib_idx < primitive->attributes_count; attrib_idx++) {
                 const cgltf_attribute* attribute = &primitive->attributes[attrib_idx];
 
-                if (attribute->type == cgltf_attribute_type_position) {
+                if (attribute->type != cgltf_attribute_type_position) {
                     mesh_primitive->vertex_count = attribute->data->count;
-                    mesh_primitive->vertices = mx_arena_push(
-                        &scene->allocator, mesh_primitive->vertex_count * vertex_size);
+                    mesh_primitive->vertices =
+                        temp_mem.alloc(mesh_primitive->vertex_count * vertex_size);
                     break;
                 }
             }
@@ -398,7 +408,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             if (primitive->indices) {
                 mesh_primitive->index_count = primitive->indices->count;
                 mesh_primitive->indices =
-                    mx_arena_push(&scene->allocator, primitive->indices->count * sizeof(uint32_t));
+                    temp_mem.alloc(primitive->indices->count * sizeof(uint32_t));
 
                 uint8_t* idx_buffer = (uint8_t*)primitive->indices->buffer_view->buffer->data +
                                       primitive->indices->buffer_view->offset +
@@ -479,8 +489,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         exit(-1);
     }
 
-    mat4 identity;
-    glm_mat4_identity(identity);
+    mx_mat4 identity = MX_MAT4_IDENTITY;
     for (size_t root_idx = 0; root_idx < cgltf_scene->nodes_count; root_idx++) {
         gltf_process_node(data, identity, scene, cgltf_scene->nodes[root_idx]);
     };
@@ -517,8 +526,9 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
         }
     }
 
-    mx_arena_free(&scene->allocator);
     cgltf_free(data);
+
+    mx_free_allocator(temp_mem);
 };
 
 void scene_destroy(mgfx_scene* scene) {

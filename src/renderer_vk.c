@@ -562,8 +562,8 @@ void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps, vo
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
 
-        width = mx_clampf(width, surface_caps->minImageExtent.width, surface_caps->maxImageExtent.width);
-        height = mx_clampf(height, surface_caps->minImageExtent.height, surface_caps->maxImageExtent.height);
+        width = mx_clamp(width, surface_caps->minImageExtent.width, surface_caps->maxImageExtent.width);
+        height = mx_clamp(height, surface_caps->minImageExtent.height, surface_caps->maxImageExtent.height);
 
         extent->width = width;
         extent->height = height;

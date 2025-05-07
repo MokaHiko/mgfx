@@ -3,8 +3,7 @@
 
 #include <mgfx/mgfx.h>
 #include <mx/mx_math_types.h>
-
-#include <cglm/cglm.h>
+#include <mx/mx_math_mtx.h>
 
 #define APP_WIDTH  1280
 #define APP_HEIGHT 720
@@ -15,17 +14,17 @@ typedef enum mgfx_camera_type {
 } mgfx_camera_type;
 
 typedef struct camera {
-    mat4 view;
-    mat4 proj;
-    mat4 view_proj;
+    mx_mat4 view;
+    mx_mat4 proj;
+    mx_mat4 view_proj;
 
-    mat4 inverse_view;
+    mx_mat4 inverse_view;
 
-    vec3 position;
+    mx_vec3 position;
 
-    vec3 forward;
-    vec3 right;
-    vec3 up;
+    mx_vec3 forward;
+    mx_vec3 right;
+    mx_vec3 up;
 
     float yaw;
     float pitch;
@@ -57,7 +56,7 @@ typedef enum mgfx_input_axis {
 MX_API mx_bool mgfx_get_key(int key_code);
 MX_API float mgfx_get_axis(mgfx_input_axis axis);
 
-void log_mat4(const mat4 mat);
+void log_mat4(const mx_mat4 mat);
 
 extern void mgfx_example_init();
 

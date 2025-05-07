@@ -193,7 +193,7 @@ mgfx_th load_texture_2d_from_path(const char* path, VkFormat format) {
         .height = height,
         .layers = 1,
 
-        .cube_map = false,
+        .cube_map = MX_FALSE,
     };
 
     mgfx_th th = mgfx_texture_create_from_memory(&info, VK_FILTER_LINEAR, data, size);
@@ -245,16 +245,11 @@ void camera_create(mgfx_camera_type type, camera* cam) {
     real_t inverse_fov = (9.0f / 16.0f);
     switch (type) {
     case mgfx_camera_type_orthographic:
-        glm_ortho(-ortho_s,
-                  ortho_s,
-                  inverse_fov * -ortho_s,
-                  inverse_fov * ortho_s,
-                  -0.001f,
-                  1000.0f,
-                  cam->proj);
+        cam->proj = mx_ortho(
+            -ortho_s, ortho_s, inverse_fov * -ortho_s, inverse_fov * ortho_s, -0.001f, 1000.0f);
         break;
     case mgfx_camera_type_perspective:
-        glm_perspective(glm_rad(60.0), 16.0 / 9.0, 0.1f, 1000.0f, cam->proj);
+        cam->proj = mx_perspective(MX_DEG_TO_RAD(60.0), 16.0 / 9.0, 0.1f, 1000.0f);
         break;
     }
 
@@ -263,74 +258,66 @@ void camera_create(mgfx_camera_type type, camera* cam) {
 }
 
 void camera_update(camera* cam) {
-    vec3 WORLD_UP = {0, 1, 0};
-    glm_cross(cam->forward, WORLD_UP, cam->right);
-    glm_normalize(cam->right);
+    cam->right = mx_vec3_cross(cam->forward, MX_VEC3_UP);
+    cam->right = mx_vec3_norm(cam->right);
 
-    vec3 look_at;
-    glm_vec3_add(cam->position, cam->forward, look_at);
-    glm_lookat(cam->position, look_at, cam->up, cam->view);
+    mx_vec3 look_at = mx_vec3_add(cam->position, cam->forward);
+    cam->view = mx_look_at(cam->position, look_at, cam->up);
 
-    glm_mat4_inv(cam->view, cam->inverse_view);
-    glm_mat4_mul(cam->proj, cam->view, cam->view_proj);
-}
-
-void log_mat4(const mat4 mat) {
-    for (int col = 0; col < 4; col++) {
-        MX_LOG_INFO("%.2f %.2f %.2f %.2f", mat[col][0], mat[col][1], mat[col][2], mat[col][3]);
-    }
+    // cam->inverse_view = mx_mat4_inv(cam->view);
+    cam->view_proj = mx_mat4_mul(cam->proj, cam->view);
 }
 
 void editor_update(camera* cam) {
     float editor_sens = 100.0f;
     cam->yaw += mgfx_get_axis(MGFX_INPUT_AXIS_MOUSE_X) * editor_sens;
     cam->pitch -= mgfx_get_axis(MGFX_INPUT_AXIS_MOUSE_Y) * editor_sens;
-    cam->pitch = glm_clamp(cam->pitch, -89.0f, 89.0f);
+    cam->pitch = mx_clamp(cam->pitch, -89.0f, 89.0f);
 
-    vec3 direction;
-    direction[0] = cos(glm_rad(cam->yaw)) * cos(glm_rad(cam->pitch));
-    direction[1] = sin(glm_rad(cam->pitch));
-    direction[2] = sin(glm_rad(cam->yaw)) * cos(glm_rad(cam->pitch));
-    glm_normalize(direction);
-    glm_vec3_copy(direction, cam->forward);
+    mx_vec3 direction;
+    direction.x = cos(MX_DEG_TO_RAD(cam->yaw)) * cos(MX_DEG_TO_RAD(cam->pitch));
+    direction.y = sin(MX_DEG_TO_RAD(cam->pitch));
+    direction.z = sin(MX_DEG_TO_RAD(cam->yaw)) * cos(MX_DEG_TO_RAD(cam->pitch));
+    direction = mx_vec3_norm(direction);
+    cam->forward = direction;
 
-    vec3 input = {0, 0, 0};
+    mx_vec3 input = {0, 0, 0};
     if (mgfx_get_key(GLFW_KEY_W) == MX_TRUE) {
-        glm_vec3_add(input, cam->forward, input);
+        input = mx_vec3_add(input, cam->forward);
     }
 
     if (mgfx_get_key(GLFW_KEY_S) == MX_TRUE) {
-        glm_vec3_sub(input, cam->forward, input);
+        input = mx_vec3_sub(input, cam->forward);
     }
 
     if (mgfx_get_key(GLFW_KEY_D) == MX_TRUE) {
-        glm_vec3_add(input, cam->right, input);
+        input = mx_vec3_add(input, cam->right);
     }
 
     if (mgfx_get_key(GLFW_KEY_A) == MX_TRUE) {
-        glm_vec3_sub(input, cam->right, input);
+        input = mx_vec3_sub(input, cam->right);
     }
 
     if (mgfx_get_key(GLFW_KEY_SPACE) == MX_TRUE) {
-        glm_vec3_add(input, cam->up, input);
+        input = mx_vec3_add(input, cam->up);
     }
 
     if (mgfx_get_key(GLFW_KEY_Q) == MX_TRUE) {
-        glm_vec3_sub(input, cam->up, input);
+        input = mx_vec3_sub(input, cam->up);
     }
 
-    if (glm_vec3_eqv(input, GLM_VEC3_ZERO)) {
+    if (mx_vec3_eqv(input, (mx_vec3)MX_VEC3_ZERO)) {
         return;
     }
 
     double ms = 5.0f;
 
-    if (!glm_vec3_eqv(input, GLM_VEC3_ZERO)) {
-        glm_vec3_norm(input);
+    if (!mx_vec3_eqv(input, (mx_vec3)MX_VEC3_ZERO)) {
+        input = mx_vec3_norm(input);
     }
 
-    glm_vec3_scale(input, ms * MGFX_TIME_DELTA_TIME, input);
-    glm_vec3_add(cam->position, input, cam->position);
+    input = mx_vec3_scale(input, ms * MGFX_TIME_DELTA_TIME);
+    cam->position = mx_vec3_add(cam->position, input);
 }
 
 int mgfx_example_app() {
@@ -359,7 +346,7 @@ int mgfx_example_app() {
         .width = 1,
         .height = 1,
         .layers = 1,
-        .cube_map = false,
+        .cube_map = MX_FALSE,
     };
 
     uint8_t default_white_data[] = {255, 255, 255, 255};
@@ -457,9 +444,7 @@ void mgfx_gizmo_draw_cube(const float* view,
     mgfx_set_proj(proj);
     mgfx_set_view(view);
 
-    mx_mat4 transform = MX_MAT4_IDENTITY;
-    mx_translate(position, transform);
-    mgfx_set_transform(transform);
+    mgfx_set_transform(mx_translate(position).val);
 
     mgfx_bind_vertex_buffer(MGFX_DEFAULT_CUBE_VBH);
     mgfx_bind_index_buffer(MGFX_DEFAULT_CUBE_IBH);

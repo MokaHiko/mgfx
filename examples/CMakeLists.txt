@@ -10,13 +10,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glfw)
 
-FetchContent_Declare(
-    cglm
-    GIT_REPOSITORY https://github.com/recp/cglm.git
-    GIT_TAG        v0.9.6
-)
-FetchContent_MakeAvailable(cglm)
-
 message(STATUS "Downloading glTF Sample Models...")
 FetchContent_Declare(
     glTF_Sample_Models
@@ -26,7 +19,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glTF_Sample_Models)
 
 add_library(ex_common ex_common.c third_party/mikktspace/mikktspace.c)
-target_link_libraries(ex_common PUBLIC cglm mgfx glfw)
+target_link_libraries(ex_common PUBLIC mgfx glfw)
 target_include_directories(ex_common PRIVATE ./third_party/)
 target_include_directories(ex_common PUBLIC ./)
 target_compile_definitions(ex_common PUBLIC GLTF_MODELS_PATH="${CMAKE_BINARY_DIR}/_deps/gltf_sample_models-src/2.0/")

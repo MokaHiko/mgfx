@@ -1,5 +1,6 @@
 #include "ex_common.h"
 
+#include <math.h>
 #include <mx/mx_log.h>
 #include <mx/mx_math.h>
 #include <mx/mx_math_mtx.h>
@@ -72,13 +73,6 @@ mgfx_ph gfxph;
 mgfx_vbh vbh;
 mgfx_ibh ibh;
 
-void mat4_log(const mx_mat4 m) {
-    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[0], m[4], m[8], m[12]);
-    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[1], m[5], m[9], m[13]);
-    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[2], m[6], m[10], m[14]);
-    MX_LOG_INFO("[ %6.2f %6.2f %6.2f %6.2f ]", m[3], m[7], m[11], m[15]);
-};
-
 void mgfx_example_init() {
     quad_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.vert.glsl.spv");
     fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.frag.glsl.spv");
@@ -103,17 +97,15 @@ void mgfx_example_update() {
         mgfx_bind_vertex_buffer(vbh);
         mgfx_bind_index_buffer(ibh);
 
-        mx_mat4 model = MX_MAT4_IDENTITY;
-        mx_mat4_rotate_euler((mx_vec3){MGFX_TIME, MGFX_TIME, MGFX_TIME}, model);
-        mx_translate((mx_vec3){x * 2.0f, 0.0f, -10.0f}, model);
-        mgfx_set_transform(model);
+        mx_mat4 rot = mx_mat4_rotate_euler(MGFX_TIME, (mx_vec3){MGFX_TIME, MGFX_TIME, MGFX_TIME});
+        mx_mat4 translate = mx_translate((mx_vec3){x * 2.0f, 0.0f, 0.0f});
+        mgfx_set_transform(mx_mat4_mul(translate, rot).val);
 
-        mx_mat4 proj = MX_MAT4_IDENTITY;
-        mx_perspective(MX_DEG_TO_RAD(60.0), 16.0 / 9.0, 0.1, 1000.0f, proj);
-        mgfx_set_proj(proj);
+        mx_mat4 proj = mx_perspective(MX_DEG_TO_RAD(60.0), 16.0 / 9.0, 0.1, 1000.0f);
+        mgfx_set_proj(proj.val);
 
-        mx_mat4 view = MX_MAT4_IDENTITY;
-        mgfx_set_view(view);
+        mx_mat4 view = mx_look_at((mx_vec3){.z = 5.0f}, (mx_vec3){0}, MX_VEC3_UP);
+        mgfx_set_view(view.val);
 
         mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, gfxph);
     }

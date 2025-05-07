@@ -4,6 +4,7 @@
 #include <ex_common.h>
 
 #include <GLFW/glfw3.h>
+#include <mx/mx_asserts.h>
 #include <mx/mx_file.h>
 #include <mx/mx_log.h>
 #include <mx/mx_memory.h>
@@ -16,9 +17,9 @@
 typedef struct directional_light {
     struct {
         float light_space_matrix[16];
-        float direction[3];
+        mx_vec3 direction;
         float distance;
-        float color[4];
+        mx_vec4 color;
     } data;
 
     camera camera;
@@ -70,7 +71,7 @@ void mgfx_example_init() {
     // Common
     camera_create(mgfx_camera_type_orthographic, &sun_light.camera);
 
-    mx_vec3_norm(sun_light.data.color, sun_light.data.color);
+    sun_light.data.color.xyz = mx_vec3_norm(sun_light.data.color.xyz);
 
     sun_light_buffer = mgfx_uniform_buffer_create(&sun_light.data, sizeof(sun_light.data));
     u_sun_light = mgfx_descriptor_create("sun_light", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -168,18 +169,17 @@ void mgfx_example_init() {
     mgfx_set_texture(u_mesh_pass_cattachment, mesh_pass_cattachment_th);
 }
 
-void draw_scene(
-    mgfx_scene* scene, uint32_t target, mgfx_ph ph, mat4 parent_transform, mx_bool is_shadow_pass) {
+void draw_scene(mgfx_scene* scene,
+                uint32_t target,
+                mgfx_ph ph,
+                mx_mat4 parent_transform,
+                mx_bool is_shadow_pass) {
     for (uint32_t n = 0; n < scene->node_count; n++) {
         if (scene->nodes[n].mesh == NULL) {
             continue;
         }
 
-        assert(scene->nodes[n].mesh->primitive_count > 0);
-
-        mat4 model;
-        glm_mat4_identity(model);
-        glm_mat4_mul(scene->nodes[n].matrix, model, model);
+        MX_ASSERT(scene->nodes[n].mesh->primitive_count > 0);
 
         for (uint32_t p = 0; p < scene->nodes[n].mesh->primitive_count; p++) {
             const struct primitive* node_primitive = &scene->nodes[n].mesh->primitives[p];
@@ -188,14 +188,7 @@ void draw_scene(
                 continue;
             }
 
-            mat4 transform;
-            glm_mat4_identity(transform);
-            if (parent_transform != NULL) {
-                glm_mat4_mul(parent_transform, model, transform);
-                mgfx_set_transform(transform[0]);
-            } else {
-                mgfx_set_transform(model[0]);
-            }
+            mgfx_set_transform(scene->nodes[n].matrix.val);
 
             mgfx_bind_vertex_buffer(node_primitive->vbh);
             mgfx_bind_index_buffer(node_primitive->ibh);
@@ -230,53 +223,43 @@ void mgfx_example_update() {
     }
 
     // Transform the light direction
-    mat4 rotation_matrix;
-    glm_mat4_identity(rotation_matrix);
+    mx_mat4 rotation_matrix = mx_mat4_rotate_euler(angle, (mx_vec3){1, 0, 1});
 
-    glm_rotate_at(rotation_matrix, (vec3){0, 0, 0}, angle, (vec3){1, 0, 1});
+    static mx_vec4 start_dir = {1.0f, -1.0f, 0.0f, 1.0f};
+    sun_light.data.direction = mx_mat_mul_vec4(rotation_matrix, start_dir).xyz;
 
-    static vec3 start_dir = {1.0f, -1.0f, 0.0f};
-    glm_mat4_mulv3(rotation_matrix, start_dir, 1.0f, sun_light.data.direction);
-
-    glm_normalize(sun_light.data.direction);
+    sun_light.data.direction = mx_vec3_norm(sun_light.data.direction);
     mgfx_buffer_update(sun_light_buffer.idx, &sun_light.data, sizeof(sun_light.data), 0);
 
     // Update object transforms
-    mat4 sponza_transform;
-    glm_mat4_identity(sponza_transform);
-    glm_translate(sponza_transform, (vec3){0.0f, 0.0f, 0.0f});
-    glm_scale(sponza_transform, (vec3){1.0f, 1.0f, 1.0f});
+    mx_mat4 sponza_transform = mx_mat4_mul(mx_translate((mx_vec3){0.0f, 0.0f, 0.0f}),
+                                           mx_scale((mx_vec3){1.0f, 1.0f, 1.0f}));
 
-    mat4 helmet_transform;
-    glm_mat4_identity(helmet_transform);
-    glm_translate(helmet_transform, (vec3){0.0f, 1.5f, 1.0f});
-    glm_scale(helmet_transform, (vec3){0.5f, 0.5f, 0.5f});
+    mx_mat4 helmet_transform = mx_mat4_mul(mx_translate((mx_vec3){0.0f, 1.5f, 1.0f}),
+                                           mx_scale((mx_vec3){1.0f, 1.0f, 1.0f}));
 
     // Draw shadow pass
-    vec3 neg_dir = {0.0f, 0.0f, 0.0f};
-    glm_vec3_negate_to(sun_light.data.direction, neg_dir);
+    mx_vec3 neg_dir = mx_vec3_scale(sun_light.data.direction, -1.0f);
 
-    vec3 light_pos = {0.0f, 0.0f, 0.0f};
-    glm_vec3_sub(neg_dir, GLM_VEC3_ZERO, light_pos);
-    glm_vec3_scale(neg_dir, distance, light_pos);
+    mx_vec3 light_pos = mx_vec3_scale(mx_vec3_sub(neg_dir, MX_VEC3_ZERO), distance);
 
-    sun_light.camera.position[0] = light_pos[0];
-    sun_light.camera.position[1] = light_pos[1];
-    sun_light.camera.position[2] = light_pos[2];
-    memcpy(sun_light.camera.forward, sun_light.data.direction, sizeof(float) * 3);
+    sun_light.camera.position.x = light_pos.x;
+    sun_light.camera.position.y = light_pos.y;
+    sun_light.camera.position.z = light_pos.z;
+    sun_light.camera.forward = sun_light.data.direction;
     camera_update(&sun_light.camera);
 
-    memcpy(sun_light.data.light_space_matrix, sun_light.camera.view_proj[0], sizeof(float) * 16);
+    memcpy(sun_light.data.light_space_matrix, sun_light.camera.view_proj.val, sizeof(float) * 16);
 
-    mgfx_set_proj(sun_light.camera.proj[0]);
-    mgfx_set_view(sun_light.camera.view[0]);
+    mgfx_set_proj(sun_light.camera.proj.val);
+    mgfx_set_view(sun_light.camera.view.val);
 
     draw_scene(&sponza, 0, shadow_pass_program, sponza_transform, MX_TRUE);
     draw_scene(&helmet, 0, shadow_pass_program, helmet_transform, MX_TRUE);
 
     // Draw mesh pass
-    mgfx_set_proj(g_example_camera.proj[0]);
-    mgfx_set_view(g_example_camera.view[0]);
+    mgfx_set_proj(g_example_camera.proj.val);
+    mgfx_set_view(g_example_camera.view.val);
 
     draw_scene(&sponza, 1, mesh_pass_program, sponza_transform, MX_FALSE);
     draw_scene(&helmet, 1, mesh_pass_program, helmet_transform, MX_FALSE);
@@ -297,11 +280,15 @@ void mgfx_example_update() {
     mgfx_debug_draw_text(0,
                          32,
                          "light pos: %.2f %.2f %.2f",
-                         sun_light.camera.position[0],
-                         sun_light.camera.position[1],
-                         sun_light.camera.position[2]);
+                         sun_light.camera.position.x,
+                         sun_light.camera.position.y,
+                         sun_light.camera.position.z);
 
-    mgfx_gizmo_draw_cube(g_example_camera.view[0], g_example_camera.proj[0], light_pos, NULL, NULL);
+    mgfx_gizmo_draw_cube(g_example_camera.view.val,
+                         g_example_camera.proj.val,
+                         light_pos,
+                         (mx_quat)MX_QUAT_IDENTITY,
+                         (mx_vec3)MX_VEC3_ONE);
 }
 
 void mgfx_example_shutdown() {
