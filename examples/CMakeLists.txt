@@ -44,3 +44,6 @@ target_link_libraries(shadows PRIVATE gltf_loader)
 
 add_executable(post_processing post_processing/post_processing.c)
 target_link_libraries(post_processing PRIVATE gltf_loader)
+
+add_executable(panoramic_viewer panoramic_viewer/panoramic_viewer.c)
+target_link_libraries(panoramic_viewer PRIVATE gltf_loader)

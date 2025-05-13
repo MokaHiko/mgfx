@@ -66,6 +66,11 @@ if(MGFX_BUILD_EXAMPLES)
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/post_processing_lit.frag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/post_processing_blit.frag.glsl
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blur.frag.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/blur.frag.glsl
+
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/panoramic_viewer.vert.glsl
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/panoramic_viewer.frag.glsl
     )
 endif()
 
@@ -108,4 +113,20 @@ add_custom_command(
 # Optional: add a custom target to depend on this
 add_custom_target(copy_built_in_fonts ALL
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/assets/fonts.copy"
+)
+
+# Copy textures directory
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/assets/textures.copy"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/assets/textures"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/textures"
+            "${CMAKE_CURRENT_BINARY_DIR}/assets/textures"
+    COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/assets/textures.copy"
+    COMMENT "Copying textures to binary assets directory"
+)
+
+# Optional: add a custom target to depend on this
+add_custom_target(copy_built_in_textures ALL
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/assets/textures.copy"
 )
