@@ -306,13 +306,13 @@ void editor_update(camera* cam) {
         input = mx_vec3_sub(input, cam->up);
     }
 
-    if (mx_vec3_eqv(input, (mx_vec3)MX_VEC3_ZERO)) {
+    if (mx_vec3_eqv(input, MX_VEC3_ZERO)) {
         return;
     }
 
     double ms = 5.0f;
 
-    if (!mx_vec3_eqv(input, (mx_vec3)MX_VEC3_ZERO)) {
+    if (!mx_vec3_eqv(input, MX_VEC3_ZERO)) {
         input = mx_vec3_norm(input);
     }
 

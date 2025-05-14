@@ -287,8 +287,8 @@ void mgfx_example_update() {
     mgfx_gizmo_draw_cube(g_example_camera.view.val,
                          g_example_camera.proj.val,
                          light_pos,
-                         (mx_quat)MX_QUAT_IDENTITY,
-                         (mx_vec3)MX_VEC3_ONE);
+                         MX_QUAT_IDENTITY,
+                         MX_VEC3_ONE);
 }
 
 void mgfx_example_shutdown() {
