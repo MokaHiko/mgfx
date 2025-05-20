@@ -16,39 +16,67 @@ typedef struct my_vertex {
 static my_vertex k_vertices[] = {
     // Front face
     {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},   // Top-right
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}},  // Top-left
+    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Back face
-    {{0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {1.0f, 0.0f, 1.0f, 1.0f}},  // Bottom-left
-    {{-0.5f, -0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 0.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-right
-    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},   // Top-left
+    {{0.5f, -0.5f, -0.5f},
+     0.0f,
+     {0.0f, 0.0f, -1.0f},
+     0.0f,
+     {1.0f, 0.0f, 1.0f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, -0.5f},
+     1.0f,
+     {0.0f, 0.0f, -1.0f},
+     0.0f,
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},  // Top-left
 
     // Left face
-    {{-0.5f, -0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{-0.5f, -0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},   // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}},  // Top-left
+    {{-0.5f, -0.5f, -0.5f},
+     0.0f,
+     {-1.0f, 0.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, 0.5f},
+     1.0f,
+     {-1.0f, 0.0f, 0.0f},
+     0.0f,
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
 
     // Right face
-    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}},  // Bottom-left
-    {{0.5f, -0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}},  // Top-right
-    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},   // Top-left
+    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     1.0f,
+     {1.0f, 0.0f, 0.0f},
+     0.0f,
+     {0.5f, 0.5f, 1.0f, 1.0f}},                                                      // Bottom right
+    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-left
 
     // Top face
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Bottom-left
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},   // Bottom-right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}},  // Top-right
+    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},  // Bottom-right
+    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
     {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Bottom face
-    {{-0.5f, -0.5f, -0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, -0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.0f, 1.0f}},  // Bottom-right
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},   // Top-right
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}},  // Top-left
+    {{-0.5f, -0.5f, -0.5f},
+     0.0f,
+     {0.0f, -1.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     1.0f,
+     {0.0f, -1.0f, 0.0f},
+     0.0f,
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Top-right
+    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
 };
 const size_t k_cube_vertex_count = sizeof(k_vertices) / sizeof(my_vertex);
 
@@ -67,16 +95,17 @@ static uint32_t k_indices[] = {
 };
 const size_t k_cube_index_count = sizeof(k_indices) / sizeof(uint32_t);
 
-mgfx_sh quad_vsh, fsh;
+mgfx_sh cube_sh, fsh;
 mgfx_ph gfxph;
 
 mgfx_vbh vbh;
 mgfx_ibh ibh;
 
 void mgfx_example_init() {
-    quad_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.vert.glsl.spv");
-    fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/unlit.frag.glsl.spv");
-    gfxph = mgfx_program_create_graphics(quad_vsh, fsh);
+    cube_sh = mgfx_shader_create("/Users/christianmarkg.solon/dev/mx_app/mgfx/unlit.vert.spv");
+    fsh = mgfx_shader_create("/Users/christianmarkg.solon/dev/mx_app/mgfx/unlit.frag.spv");
+
+    gfxph = mgfx_program_create_graphics(cube_sh, fsh);
 
     vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));
     ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
@@ -116,7 +145,7 @@ void mgfx_example_shutdown() {
     mgfx_buffer_destroy(ibh.idx);
 
     mgfx_program_destroy(gfxph);
-    mgfx_shader_destroy(quad_vsh);
+    mgfx_shader_destroy(cube_sh);
     mgfx_shader_destroy(fsh);
 }
 

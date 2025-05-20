@@ -132,15 +132,10 @@ gltf_process_node(const cgltf_data* gltf, mx_mat4 parent_mtx, mgfx_scene* scene,
     }
 };
 
-static uint8_t scene_memory_arena[15 * MX_MB];
-
 #define MGFX_MAX_DIR_LEN 256
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene) {
-    mx_allocator_t temp_mem = mx_make_allocator((mx_arena){
-        .data = scene_memory_arena,
-        .head = 0,
-        .len = sizeof(scene_memory_arena),
-    });
+    static mx_scoped_allocator(15 * MX_MB) tmp = mx_scoped_allocator_create();
+    //mx_allocator_t tmp = mx_default_allocator();
 
     cgltf_options options = {0};
     cgltf_data* data = NULL;
@@ -339,7 +334,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                 if (attribute->type != cgltf_attribute_type_position) {
                     mesh_primitive->vertex_count = attribute->data->count;
                     mesh_primitive->vertices =
-                        temp_mem.alloc(mesh_primitive->vertex_count * vertex_size);
+                        mx_alloc(tmp, mesh_primitive->vertex_count * vertex_size);
                     break;
                 }
             }
@@ -408,7 +403,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             if (primitive->indices) {
                 mesh_primitive->index_count = primitive->indices->count;
                 mesh_primitive->indices =
-                    temp_mem.alloc(primitive->indices->count * sizeof(uint32_t));
+                    mx_alloc(tmp, primitive->indices->count * sizeof(uint32_t));
 
                 uint8_t* idx_buffer = (uint8_t*)primitive->indices->buffer_view->buffer->data +
                                       primitive->indices->buffer_view->offset +
@@ -528,7 +523,8 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
     cgltf_free(data);
 
-    mx_free_allocator(temp_mem);
+    // TODO: Arena Reset
+    __mx_temp_arena.head = 0;
 };
 
 void scene_destroy(mgfx_scene* scene) {

@@ -17,6 +17,15 @@ else()
     add_library(mgfx STATIC src/mgfx.c src/renderer_vk.c third_party/spirv_reflect/spirv_reflect.c)
 endif()
 
+include(FetchContent)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+)
+FetchContent_MakeAvailable(glfw)
+
 target_link_libraries(mgfx PUBLIC mx vma Vulkan::Vulkan)
 
 target_include_directories(mgfx PUBLIC include)

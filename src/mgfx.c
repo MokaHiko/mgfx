@@ -34,10 +34,6 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb/stb_truetype.h>
 
-#include <stdarg.h>
-#include <stdint.h>
-#include <stdio.h>
-
 typedef struct mgfx_texture {
     mgfx_imgh imgh;        // VkImage
     uint64_t address_mode; // VkSamplerAddressMode
@@ -342,15 +338,7 @@ void image_destroy(image_vk* image) {
 }
 
 int swapchain_create(
-    VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* sc, mx_arena* memory_arena) {
-    mx_arena* local_arena = memory_arena;
-
-    mx_arena temp_arena;
-    if (memory_arena == NULL) {
-        temp_arena = mx_arena_alloc(MX_KB);
-        local_arena = &temp_arena;
-    }
-
+    VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* sc, mx_allocator_t allocator) {
     sc->extent.width = w;
     sc->extent.height = h;
 
@@ -401,7 +389,7 @@ int swapchain_create(
               sc->image_count,
               K_SWAPCHAIN_MAX_IMAGES);
 
-    VkImage* images = mx_arena_push(local_arena, sc->image_count * sizeof(VkImage));
+    VkImage* images = mx_alloc(allocator, sc->image_count * sizeof(VkImage));
     vkGetSwapchainImagesKHR(s_device, sc->handle, &sc->image_count, images);
 
     VkImageViewCreateInfo sc_img_view_info = {0};
@@ -445,10 +433,6 @@ int swapchain_create(
         .depth_attachment = NULL,
         .depth_attachment_view = NULL,
     };
-
-    if (memory_arena == NULL) {
-        mx_arena_free(local_arena);
-    }
 
     return MGFX_SUCCESS;
 }
@@ -697,7 +681,7 @@ void framebuffer_destroy(framebuffer_vk* fb) {
 }
 
 void shader_create(size_t length, const char* code, shader_vk* shader) {
-    mx_arena shader_arena = mx_arena_alloc(10 * MX_KB);
+    mx_scoped_allocator(10 * MX_KB) tmp = mx_scoped_allocator_create();
 
     if (length % sizeof(uint32_t) != 0) {
         MX_LOG_ERROR("Shader code size must be a multiple of 4!");
@@ -708,12 +692,14 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     SpvReflectResult result = spvReflectCreateShaderModule(length, code, &module);
     MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
+    MX_LOG_INFO("Entry Point: %s (Stage: %u)", module.entry_points[0].name, module.entry_points[0].shader_stage);
+
     if (module.shader_stage == SPV_REFLECT_SHADER_STAGE_VERTEX_BIT) {
         uint32_t input_count = 0;
         spvReflectEnumerateInputVariables(&module, &input_count, NULL);
         if (input_count > 0) {
             SpvReflectInterfaceVariable** input_variables =
-                mx_arena_push(&shader_arena, input_count * sizeof(SpvReflectInterfaceVariable));
+                (mx_alloc(tmp, input_count * sizeof(SpvReflectInterfaceVariable)));
             spvReflectEnumerateInputVariables(&module, &input_count, input_variables);
 
             // Sort by location and filter out built in variables.
@@ -732,8 +718,13 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             shader->vertex_attribute_count = sorted_iv_count;
 
             uint32_t input_offset = 0;
-            for (uint32_t i = 0; i < sorted_iv_count; i++) {
+            for (uint32_t i = 0; i < MGFX_SHADER_MAX_VERTEX_ATTRIBUTES; i++) {
                 const SpvReflectInterfaceVariable* input_variable = sorted_iv[i];
+
+                if (!input_variable) {
+                    continue;
+                }
+
                 shader->vertex_attributes[i] = (VkVertexInputAttributeDescription){
                     .location = input_variable->location,
                     .binding = 0,
@@ -742,16 +733,21 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
                 };
 
                 input_offset += vk_format_size((VkFormat)input_variable->format);
-                /*MX_LOG_TRACE("input variable: %s\n", input_variable->name);*/
-                /*MX_LOG_TRACE("\tlocation: %u\n", input_variable->location);*/
-                /*MX_LOG_TRACE("\toffset: %u\n", input_variable->word_offset.location);*/
-                /*MX_LOG_TRACE("\tformat: %u (%d bytes)\n",*/
-                /*             input_variable->format,*/
-                /*             vk_format_size((VkFormat)input_variable->format));*/
+
+                MX_LOG_TRACE("input variable: %s", input_variable->name);
+                MX_LOG_TRACE("\tlocation: %u", input_variable->location);
+                MX_LOG_TRACE("\toffset: %u", input_variable->word_offset.location);
+                MX_LOG_TRACE("\tformat: %u (%d bytes)",
+                             input_variable->format,
+                             vk_format_size((VkFormat)input_variable->format));
+
+                sorted_iv_count--;
+                if (sorted_iv_count == 0) {
+                    break;
+                };
             }
 
             if (shader->vertex_attribute_count > 0) {
-                // TODO: Support multiple vertex buffer bindings.
                 shader->vertex_binding_count = 1;
                 shader->vertex_bindings[0] = (VkVertexInputBindingDescription){
                     .binding = 0,
@@ -768,7 +764,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     if (binding_count > 0) {
         MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
         SpvReflectDescriptorBinding** bindings =
-            mx_arena_push(&shader_arena, binding_count * sizeof(SpvReflectDescriptorBinding*));
+            mx_alloc(tmp, binding_count * sizeof(SpvReflectDescriptorBinding*));
         spvReflectEnumerateDescriptorBindings(&module, &binding_count, bindings);
 
         for (uint32_t i = 0; i < binding_count; i++) {
@@ -783,6 +779,13 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             };
 
             ds->binding_count++;
+
+            MX_LOG_TRACE("%s set(%d) binding:(%d)",
+                         bindings[i]->name,
+                         bindings[i]->set,
+                         bindings[i]->binding);
+            MX_LOG_TRACE("\ttype: %u", bindings[i]->descriptor_type);
+            MX_LOG_TRACE("\toffset: %u", bindings[i]->resource_type);
         }
     }
 
@@ -791,13 +794,21 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
     if (pc_count > 0) {
         SpvReflectBlockVariable** push_constants =
-            mx_arena_push(&shader_arena, pc_count * sizeof(SpvReflectBlockVariable));
+            mx_alloc(tmp, pc_count * sizeof(SpvReflectBlockVariable));
         spvReflectEnumeratePushConstantBlocks(&module, &pc_count, push_constants);
         for (uint32_t block_idx = 0; block_idx < pc_count; block_idx++) {
             const SpvReflectBlockVariable* pc_block = push_constants[block_idx];
 
+            MX_LOG_TRACE("pc block: %s", pc_block->name);
+            MX_LOG_TRACE("\tstage: %u", module.shader_stage);
+            MX_LOG_TRACE("\tsize: %u", push_constants[block_idx]->size);
+            MX_LOG_TRACE("\tstride: %u", push_constants[block_idx]->array.stride);
             for (uint32_t member_idx = 0; member_idx < push_constants[block_idx]->member_count;
                  member_idx++) {
+                MX_LOG_TRACE("\t - %s", push_constants[block_idx]->members[member_idx].name);
+                MX_LOG_TRACE("\t\t - offset: %u", push_constants[block_idx]->members[member_idx].offset);
+                MX_LOG_TRACE("\t\t - size: %u", push_constants[block_idx]->members[member_idx].size);
+                MX_LOG_TRACE("\t\t - stride: %u", push_constants[block_idx]->members[member_idx].array.stride);
                 shader->pc_ranges[block_idx] = (VkPushConstantRange){
                     .stageFlags = module.shader_stage,
                     .offset = push_constants[block_idx]->offset,
@@ -818,8 +829,6 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     info.pCode = (uint32_t*)(void*)code;
 
     VK_CHECK(vkCreateShaderModule(s_device, &info, NULL, &shader->module));
-
-    mx_arena_free(&shader_arena);
 };
 
 void shader_destroy(shader_vk* shader) { vkDestroyShaderModule(s_device, shader->module, NULL); }
@@ -1069,6 +1078,7 @@ void pipeline_create_graphics(const shader_vk* vs,
             flat_pc_ranges[flat_pc_range_count] = shader->pc_ranges[flat_pc_range_count];
             ++flat_pc_range_count;
         }
+        flat_pc_range_count = 1;
     }
 
     for (int ds_idx = 0; ds_idx < ds_count; ds_idx++) {
@@ -1153,7 +1163,8 @@ mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain
                                    (float)s_surface_caps.maxImageExtent.height);
         }
 
-        swapchain_create(s_surface, width, height, &s_swapchain, NULL);
+        // TODO: Memory leak
+        swapchain_create(s_surface, width, height, &s_swapchain, mx_default_allocator());
         sc->resize = MX_FALSE;
     }
 
@@ -1215,6 +1226,7 @@ const mgfx_built_in_vertex MGFX_FS_QUAD_VERTICES[4] = {
     // Vertex 3: Top-left
     {{-1.0f, 1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 1.0f, 0.0f, 1.0f}},
 };
+
 const uint32_t MGFX_FS_QUAD_INDICES[6] = {0, 1, 2, 2, 3, 0};
 
 typedef struct mgfx_draw {
@@ -1348,8 +1360,10 @@ mgfx_dh dbg_ui_font_atlas_dh;
 mgfx_vbh dbg_quad_vbh;
 mgfx_ibh dbg_quad_ibh;
 
+static mx_allocator_t mgfx_allocator;
+
 int mgfx_init(const mgfx_init_info* info) {
-    mx_arena vk_init_arena = mx_arena_alloc(MX_MB);
+    mx_scoped_allocator(MX_MB) tmp = mx_scoped_allocator_create();
 
     VkApplicationInfo app_info = {0};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -1375,7 +1389,7 @@ int mgfx_init(const mgfx_init_info* info) {
     uint32_t avail_prop_count = 0;
     VK_CHECK(vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, NULL));
     VkExtensionProperties* avail_props =
-        mx_arena_push(&vk_init_arena, avail_prop_count * sizeof(VkExtensionProperties));
+        mx_alloc(tmp, avail_prop_count * sizeof(VkExtensionProperties));
     VK_CHECK(vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, avail_props));
 
     for (int req_index = 0; req_index < k_req_ext_count; req_index++) {
@@ -1389,7 +1403,6 @@ int mgfx_init(const mgfx_init_info* info) {
 
         if (validated != MX_SUCCESS) {
             MX_LOG_ERROR("Extension required not supported: %s!\n", k_req_exts[req_index]);
-            mx_arena_free(&vk_init_arena);
             return -1;
         }
     }
@@ -1401,8 +1414,7 @@ int mgfx_init(const mgfx_init_info* info) {
     // Check and enable validation layers.
     uint32_t layer_prop_count;
     vkEnumerateInstanceLayerProperties(&layer_prop_count, NULL);
-    VkLayerProperties* layer_props =
-        mx_arena_push(&vk_init_arena, sizeof(VkLayerProperties) * layer_prop_count);
+    VkLayerProperties* layer_props = mx_alloc(tmp, sizeof(VkLayerProperties) * layer_prop_count);
     vkEnumerateInstanceLayerProperties(&layer_prop_count, layer_props);
 
     const char* validationLayers = {"VK_LAYER_KHRONOS_validation"};
@@ -1444,9 +1456,8 @@ int mgfx_init(const mgfx_init_info* info) {
                                   k_req_device_ext_names,
                                   &s_phys_device_props,
                                   &s_phys_device,
-                                  &vk_init_arena) != VK_SUCCESS) {
+                                  tmp) != VK_SUCCESS) {
         MX_LOG_ERROR("Failed to find suitable physical device!");
-        mx_arena_free(&vk_init_arena);
         return -1;
     }
 
@@ -1455,7 +1466,7 @@ int mgfx_init(const mgfx_init_info* info) {
     uint32_t queue_family_props_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(s_phys_device, &queue_family_props_count, NULL);
     VkQueueFamilyProperties* queue_family_props =
-        mx_arena_push(&vk_init_arena, sizeof(VkQueueFamilyProperties) * queue_family_props_count);
+        mx_alloc(tmp, sizeof(VkQueueFamilyProperties) * queue_family_props_count);
 
     vkGetPhysicalDeviceQueueFamilyProperties(
         s_phys_device, &queue_family_props_count, queue_family_props);
@@ -1490,7 +1501,6 @@ int mgfx_init(const mgfx_init_info* info) {
     for (uint16_t i = 0; i < MGFX_QUEUE_COUNT; i++) {
         if (s_queue_indices[MGFX_QUEUE_PRESENT] == -1) {
             MX_LOG_ERROR("Failed to find graphics queue!");
-            mx_arena_free(&vk_init_arena);
             break;
         }
     }
@@ -1539,7 +1549,7 @@ int mgfx_init(const mgfx_init_info* info) {
     uint32_t surface_fmt_count = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(s_phys_device, s_surface, &surface_fmt_count, NULL);
     VkSurfaceFormatKHR* surface_fmts =
-        mx_arena_push(&vk_init_arena, surface_fmt_count * sizeof(VkSurfaceFormatKHR));
+        mx_alloc(tmp, surface_fmt_count * sizeof(VkSurfaceFormatKHR));
     vkGetPhysicalDeviceSurfaceFormatsKHR(
         s_phys_device, s_surface, &surface_fmt_count, surface_fmts);
 
@@ -1556,8 +1566,7 @@ int mgfx_init(const mgfx_init_info* info) {
 
     uint32_t present_mode_count = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(s_phys_device, s_surface, &present_mode_count, NULL);
-    VkPresentModeKHR* present_modes =
-        mx_arena_push(&vk_init_arena, surface_fmt_count * sizeof(VkPresentModeKHR));
+    VkPresentModeKHR* present_modes = mx_alloc(tmp, surface_fmt_count * sizeof(VkPresentModeKHR));
     vkGetPhysicalDeviceSurfacePresentModesKHR(
         s_phys_device, s_surface, &present_mode_count, present_modes);
     for (uint32_t i = 0; i < present_mode_count; i++) {
@@ -1566,8 +1575,7 @@ int mgfx_init(const mgfx_init_info* info) {
     VkExtent2D swapchain_extent;
     choose_swapchain_extent_vk(&s_surface_caps, info->nwh, &swapchain_extent);
 
-    swapchain_create(
-        s_surface, swapchain_extent.width, swapchain_extent.height, &s_swapchain, &vk_init_arena);
+    swapchain_create(s_surface, swapchain_extent.width, swapchain_extent.height, &s_swapchain, tmp);
 
     VmaAllocatorCreateInfo allocator_info = {
         .instance = s_instance, .physicalDevice = s_phys_device, .device = s_device,
@@ -1644,8 +1652,6 @@ int mgfx_init(const mgfx_init_info* info) {
                        0,
                        &s_tib_pool);
 
-    mx_arena_free(&vk_init_arena);
-
     memset(s_view_targets, 0, sizeof(mgfx_fbh) * 0xFF);
 
     // Init mgfx
@@ -1662,7 +1668,7 @@ int mgfx_init(const mgfx_init_info* info) {
         exit(-1);
     }
 
-    unsigned char* ttf_buffer = mx_alloc(font_file_size, 0); // load .ttf file
+    unsigned char* ttf_buffer = mx_alloc(tmp, font_file_size); // load .ttf file
     mx_read_file(font_path, &font_file_size, ttf_buffer);
 
     unsigned char atlas_bitmap[512 * 512];
@@ -1699,8 +1705,6 @@ int mgfx_init(const mgfx_init_info* info) {
         float color[4];
     } glyph_vertex;
 
-    mx_free(ttf_buffer);
-
     const mgfx_image_info texture_info = {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
         .width = 1,
@@ -1727,7 +1731,7 @@ int mgfx_init(const mgfx_init_info* info) {
 }
 
 mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len) {
-    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
+    buffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(buffer_entry));
     memset(entry, 0, sizeof(buffer_entry));
 
     vertex_buffer_create(data, len, &entry->value);
@@ -1751,7 +1755,7 @@ void mgfx_transient_index_buffer_allocate(const void* data,
 }
 
 mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
-    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
+    buffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(buffer_entry));
     memset(entry, 0, sizeof(buffer_entry));
 
     index_buffer_create(data, len, &entry->value);
@@ -1763,7 +1767,7 @@ mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
 }
 
 mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len) {
-    buffer_entry* entry = mx_alloc(sizeof(buffer_entry), 0);
+    buffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(buffer_entry));
     uniform_buffer_create(data, len, &entry->value);
 
     entry->key = entry->value.handle;
@@ -1797,20 +1801,18 @@ mgfx_sh mgfx_shader_create(const char* path) {
         exit(-1);
     }
 
-    mx_arena arena = mx_arena_alloc(MX_MB);
-
-    char* shader_code = mx_arena_push(&arena, size);
+    char* shader_code = mx_alloc(mx_default_allocator(), size);
     mx_read_file(path, &size, shader_code);
 
-    shader_entry* entry = mx_alloc(sizeof(shader_entry), 0);
+    shader_entry* entry = mx_alloc(mx_default_allocator(), sizeof(shader_entry));
     memset(entry, 0, sizeof(shader_entry));
 
+    MX_LOG_TRACE("%s...", path);
     shader_create(size, shader_code, &entry->value);
 
     entry->key = entry->value.module;
     HASH_ADD(hh, s_shader_table, key, sizeof(VkShaderModule), entry);
 
-    mx_arena_free(&arena);
     return (mgfx_sh){.idx = (uint64_t)entry->key};
 }
 
@@ -1823,13 +1825,13 @@ void mgfx_shader_destroy(mgfx_sh sh) {
     shader_destroy(&entry->value);
 
     HASH_DEL(s_shader_table, entry);
-    mx_free(entry);
+    mx_free(mx_default_allocator(), entry);
 }
 
 mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
                                         mgfx_sh fsh,
                                         const mgfx_graphics_ex_create_info* ex_info) {
-    program_entry* entry = mx_alloc(sizeof(program_entry), 0);
+    program_entry* entry = mx_alloc(mx_default_allocator(), sizeof(program_entry));
     memset(entry, 0, sizeof(program_entry));
     entry->key.idx = (uint64_t)entry;
 
@@ -1861,7 +1863,7 @@ mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
 mgfx_ph mgfx_program_create(mgfx_sh* sh) { return (mgfx_ph){0}; }
 
 mgfx_ph mgfx_program_create_compute(mgfx_sh csh) {
-    program_entry* entry = mx_alloc(sizeof(program_entry), 0);
+    program_entry* entry = mx_alloc(mx_default_allocator(), sizeof(program_entry));
     memset(entry, 0, sizeof(program_entry));
 
     entry->key.idx = (uint64_t)entry;
@@ -1880,11 +1882,11 @@ void mgfx_program_destroy(mgfx_ph ph) {
     pipeline_destroy(&entry->value);
 
     HASH_DEL(s_program_table, entry);
-    mx_free(entry);
+    mx_free(mx_default_allocator(), entry);
 }
 
 mgfx_imgh mgfx_image_create(const mgfx_image_info* info, uint32_t usage) {
-    image_entry* entry = mx_alloc(sizeof(image_entry), 0);
+    image_entry* entry = mx_alloc(mx_default_allocator(), sizeof(image_entry));
     memset(entry, 0, sizeof(image_entry));
 
     usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -1909,14 +1911,14 @@ void mgfx_image_destroy(mgfx_imgh imgh) {
     image_destroy(&entry->value);
 
     HASH_DEL(s_image_table, entry);
-    mx_free(entry);
+    mx_free(mx_default_allocator(), entry);
 }
 
 mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
                                         uint32_t filter,
                                         void* data,
                                         size_t len) {
-    texture_entry* entry = mx_alloc(sizeof(texture_entry), 0);
+    texture_entry* entry = mx_alloc(mx_default_allocator(), sizeof(texture_entry));
     memset(entry, 0, sizeof(texture_entry));
 
     entry->value.imgh =
@@ -1960,7 +1962,7 @@ mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
 };
 
 mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
-    texture_entry* entry = mx_alloc(sizeof(texture_entry), 0);
+    texture_entry* entry = mx_alloc(mx_default_allocator(), sizeof(texture_entry));
     memset(entry, 0, sizeof(texture_entry));
 
     entry->value.imgh = img;
@@ -2034,11 +2036,11 @@ void mgfx_texture_destroy(mgfx_th th, mx_bool release_image) {
         mgfx_image_destroy(entry->value.imgh);
     }
 
-    mx_free(entry);
+    mx_free(mx_default_allocator(), entry);
 }
 
 mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type) {
-    descriptor_entry* entry = mx_alloc(sizeof(descriptor_entry), 0);
+    descriptor_entry* entry = mx_alloc(mx_default_allocator(), sizeof(descriptor_entry));
     memset(entry, 0, sizeof(descriptor_entry));
 
     entry->key = (mgfx_dh){.idx = (uint64_t)(entry)};
@@ -2094,7 +2096,7 @@ mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
                                  uint32_t color_attachment_count,
                                  mgfx_imgh depth_attachment) {
     // TODO: Framebuffer should be an api agonstic concept.
-    framebuffer_entry* entry = mx_alloc(sizeof(framebuffer_entry), 0);
+    framebuffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(framebuffer_entry));
     memset(entry, 0, sizeof(framebuffer_entry));
 
     framebuffer_vk* fb = &entry->value;
@@ -2138,7 +2140,7 @@ void mgfx_framebuffer_destroy(mgfx_fbh fbh) {
     framebuffer_destroy(&framebuffer_entry->value);
 
     HASH_DEL(s_framebuffer_table, framebuffer_entry);
-    mx_free(framebuffer_entry);
+    mx_free(mx_default_allocator(), framebuffer_entry);
 }
 
 void mgfx_bind_vertex_buffer(mgfx_vbh vbh) {
@@ -2589,7 +2591,7 @@ void mgfx_frame() {
                 .pSetLayouts = (VkDescriptorSetLayout*)&cur_program->dsls[ds_idx],
             };
 
-            ds_entry = mx_alloc(sizeof(descriptor_set_entry), 0);
+            ds_entry = mx_alloc(mx_default_allocator(), sizeof(descriptor_set_entry));
             memset(ds_entry, 0, sizeof(descriptor_set_entry));
 
             ds_entry->key = ds_hash;
@@ -2796,6 +2798,8 @@ void mgfx_frame() {
 };
 
 // Debug tools
+#include <stdarg.h>
+#include <stdio.h>
 void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     // TODO: Add all to single buffer or commands at end of regular draws.
     char word_buffer[MGFX_DEBUG_MAX_TEXT];

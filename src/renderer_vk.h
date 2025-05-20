@@ -40,7 +40,7 @@ int choose_physical_device_vk(VkInstance instance,
                               const char** device_exts,
                               VkPhysicalDeviceProperties* phys_device_props,
                               VkPhysicalDevice* phys_device,
-                              mx_arena* arena);
+                              mx_allocator_t allocator);
 
 void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps,
                                 void* nwh,
@@ -100,8 +100,7 @@ typedef struct swapchain_vk {
     mx_bool resize;
 } swapchain_vk;
 
-int swapchain_create(
-    VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain, mx_arena* arena);
+int swapchain_create(VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain, mx_allocator_t alloc);
 void swapchain_destroy(swapchain_vk* swapchain);
 
 typedef struct buffer_vk {
@@ -133,7 +132,6 @@ typedef struct shader_vk {
     VkPushConstantRange pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
     int pc_count;
 
-    // Vertex shader.
     VkVertexInputBindingDescription vertex_bindings[MGFX_SHADER_MAX_VERTEX_BINDING];
     int vertex_binding_count;
 
