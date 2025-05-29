@@ -1,4 +1,3 @@
-#define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "ex_common.h"
 
 #include "mx/mx_log.h"
@@ -14,7 +13,6 @@
 
 #include <vulkan/vulkan_core.h>
 
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 GLFWwindow* s_window = NULL;
@@ -62,12 +60,28 @@ typedef struct vertex {
     float color[4];
 } vertex;
 
-static mgfx_built_in_vertex k_cube_vertices[] = {
+static mgfx_pntuc32f k_cube_vertices[] = {
     // Front face
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},  // Top-right
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+    {{-0.5f, -0.5f, 0.5f},
+     0.0f,
+     {0.0f, 0.0f, 1.0f},
+     0.0f,
+     {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, 0.5f},
+     1.0f,
+     {0.0f, 0.0f, 1.0f},
+     0.0f,
+     {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, 0.5f},
+     1.0f,
+     {0.0f, 0.0f, 1.0f},
+     1.0f,
+     {0.0f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, 0.5f},
+     0.0f,
+     {0.0f, 0.0f, 1.0f},
+     1.0f,
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Back face
     {{0.5f, -0.5f, -0.5f},
@@ -80,8 +94,16 @@ static mgfx_built_in_vertex k_cube_vertices[] = {
      {0.0f, 0.0f, -1.0f},
      0.0f,
      {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},  // Top-left
+    {{-0.5f, 0.5f, -0.5f},
+     1.0f,
+     {0.0f, 0.0f, -1.0f},
+     1.0f,
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, -0.5f},
+     0.0f,
+     {0.0f, 0.0f, -1.0f},
+     1.0f,
+     {0.5f, 0.5f, 0.5f, 1.0f}}, // Top-left
 
     // Left face
     {{-0.5f, -0.5f, -0.5f},
@@ -94,24 +116,60 @@ static mgfx_built_in_vertex k_cube_vertices[] = {
      {-1.0f, 0.0f, 0.0f},
      0.0f,
      {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},  // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
+    {{-0.5f, 0.5f, 0.5f},
+     1.0f,
+     {-1.0f, 0.0f, 0.0f},
+     1.0f,
+     {0.0f, 0.5f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     0.0f,
+     {-1.0f, 0.0f, 0.0f},
+     1.0f,
+     {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
 
     // Right face
-    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, 0.5f},
+     0.0f,
+     {1.0f, 0.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
     {{0.5f, -0.5f, -0.5f},
      1.0f,
      {1.0f, 0.0f, 0.0f},
      0.0f,
-     {0.5f, 0.5f, 1.0f, 1.0f}},                                                      // Bottom right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-left
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
+    {{0.5f, 0.5f, -0.5f},
+     1.0f,
+     {1.0f, 0.0f, 0.0f},
+     1.0f,
+     {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, 0.5f},
+     0.0f,
+     {1.0f, 0.0f, 0.0f},
+     1.0f,
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-left
 
     // Top face
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},  // Bottom-right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+    {{-0.5f, 0.5f, 0.5f},
+     0.0f,
+     {0.0f, 1.0f, 0.0f},
+     0.0f,
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, 0.5f, 0.5f},
+     1.0f,
+     {0.0f, 1.0f, 0.0f},
+     0.0f,
+     {0.5f, 1.0f, 0.5f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, -0.5f},
+     1.0f,
+     {0.0f, 1.0f, 0.0f},
+     1.0f,
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     0.0f,
+     {0.0f, 1.0f, 0.0f},
+     1.0f,
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Bottom face
     {{-0.5f, -0.5f, -0.5f},
@@ -124,10 +182,18 @@ static mgfx_built_in_vertex k_cube_vertices[] = {
      {0.0f, -1.0f, 0.0f},
      0.0f,
      {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Top-right
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
+    {{0.5f, -0.5f, 0.5f},
+     1.0f,
+     {0.0f, -1.0f, 0.0f},
+     1.0f,
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Top-right
+    {{-0.5f, -0.5f, 0.5f},
+     0.0f,
+     {0.0f, -1.0f, 0.0f},
+     1.0f,
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
 };
-static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(mgfx_built_in_vertex);
+static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(mgfx_pntuc32f);
 
 static uint32_t k_cube_indices[] = {
     // Front face
@@ -206,7 +272,8 @@ static void window_resize_callback(GLFWwindow* window, int width, int height) {
     mgfx_reset(width, height);
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+static void
+key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
         s_keys[key] = MX_TRUE;
         return;
@@ -245,8 +312,12 @@ void camera_create(mgfx_camera_type type, camera* cam) {
     real_t inverse_fov = (9.0f / 16.0f);
     switch (type) {
     case mgfx_camera_type_orthographic:
-        cam->proj = mx_ortho(
-            -ortho_s, ortho_s, inverse_fov * -ortho_s, inverse_fov * ortho_s, -0.001f, 1000.0f);
+        cam->proj = mx_ortho(-ortho_s,
+                             ortho_s,
+                             inverse_fov * -ortho_s,
+                             inverse_fov * ortho_s,
+                             -0.001f,
+                             1000.0f);
         break;
     case mgfx_camera_type_perspective:
         cam->proj = mx_perspective(MX_DEG_TO_RAD(60.0), 16.0 / 9.0, 0.1f, 1000.0f);
@@ -350,27 +421,34 @@ int mgfx_example_app() {
     };
 
     uint8_t default_white_data[] = {255, 255, 255, 255};
-    s_default_white =
-        mgfx_texture_create_from_memory(&texture_info, VK_FILTER_NEAREST, default_white_data, 4);
+    s_default_white = mgfx_texture_create_from_memory(&texture_info,
+                                                      VK_FILTER_NEAREST,
+                                                      default_white_data,
+                                                      4);
 
     uint8_t default_black_data[] = {0, 0, 0, 0};
-    s_default_black =
-        mgfx_texture_create_from_memory(&texture_info, VK_FILTER_NEAREST, default_black_data, 4);
+    s_default_black = mgfx_texture_create_from_memory(&texture_info,
+                                                      VK_FILTER_NEAREST,
+                                                      default_black_data,
+                                                      4);
 
     uint8_t default_normal_data[] = {128, 128, 255, 255};
-    s_default_normal_map =
-        mgfx_texture_create_from_memory(&texture_info, VK_FILTER_NEAREST, default_normal_data, 4);
+    s_default_normal_map = mgfx_texture_create_from_memory(&texture_info,
+                                                           VK_FILTER_NEAREST,
+                                                           default_normal_data,
+                                                           4);
 
     // Init gizmos
-    MGFX_DEFAULT_CUBE_VBH = mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices));
+    mgfx_vertex_layout gizmo_vl = {0};
+    MGFX_DEFAULT_CUBE_VBH = mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
     MGFX_DEFAULT_CUBE_IBH = mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
     MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.frag.glsl.spv");
 
     const mgfx_graphics_ex_create_info gizmo_gfx_info = {
-        .polygon_mode = VK_POLYGON_MODE_LINE,
-        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .polygon_mode = MGFX_LINE,
+        .primitive_topology = MGFX_TRIANGLE_LIST,
     };
 
     MGFX_GIZMO_PH =

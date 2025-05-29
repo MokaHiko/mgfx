@@ -12,22 +12,28 @@
 #include "mgfx/defines.h"
 
 #ifdef _MSC_VER
-#define VK_CHECK(call)                                                                             \
-    do {                                                                                           \
-        VkResult result = (call);                                                                  \
-        if (result != VK_SUCCESS) {                                                                \
-            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);         \
-            __debugbreak();                                                                        \
-        }                                                                                          \
+#define VK_CHECK(call)                                                                   \
+    do {                                                                                 \
+        VkResult result = (call);                                                        \
+        if (result != VK_SUCCESS) {                                                      \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d",                            \
+                         result,                                                         \
+                         __FILE__,                                                       \
+                         __LINE__);                                                      \
+            __debugbreak();                                                              \
+        }                                                                                \
     } while (0)
 #else
-#define VK_CHECK(call)                                                                             \
-    do {                                                                                           \
-        VkResult result = (call);                                                                  \
-        if (result != VK_SUCCESS) {                                                                \
-            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d", result, __FILE__, __LINE__);         \
-            __builtin_trap();                                                                      \
-        }                                                                                          \
+#define VK_CHECK(call)                                                                   \
+    do {                                                                                 \
+        VkResult result = (call);                                                        \
+        if (result != VK_SUCCESS) {                                                      \
+            MX_LOG_ERROR("Vulkan Error: %d in %s at line %d",                            \
+                         result,                                                         \
+                         __FILE__,                                                       \
+                         __LINE__);                                                      \
+            __builtin_trap();                                                            \
+        }                                                                                \
     } while (0)
 #endif
 
@@ -47,6 +53,13 @@ void choose_swapchain_extent_vk(const VkSurfaceCapabilitiesKHR* surface_caps,
                                 VkExtent2D* extent);
 
 enum { MGFX_FRAME_0, MGFX_FRAME_1, MGFX_FRAME_COUNT };
+
+typedef enum queues_vk {
+    VK_QUEUE_GRAPHICS = 0,
+    VK_QUEUE_PRESENT,
+
+    VK_QUEUE_COUNT,
+} queues_vk;
 
 typedef struct frame_vk {
     VkCommandPool cmd_pool;
@@ -100,7 +113,11 @@ typedef struct swapchain_vk {
     mx_bool resize;
 } swapchain_vk;
 
-int swapchain_create(VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* swapchain, mx_allocator_t alloc);
+int swapchain_create(VkSurfaceKHR surface,
+                     uint32_t w,
+                     uint32_t h,
+                     swapchain_vk* swapchain,
+                     mx_allocator_t alloc);
 void swapchain_destroy(swapchain_vk* swapchain);
 
 typedef struct buffer_vk {
@@ -109,9 +126,9 @@ typedef struct buffer_vk {
     VkBufferUsageFlags usage;
 } buffer_vk;
 
-typedef buffer_vk vertex_buffer_vk;
 typedef buffer_vk index_buffer_vk;
 typedef buffer_vk uniform_buffer_vk;
+typedef buffer_vk storage_buffer_vk;
 
 typedef struct ring_buffer_vk {
     buffer_vk buffer;
@@ -132,10 +149,9 @@ typedef struct shader_vk {
     VkPushConstantRange pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
     int pc_count;
 
-    VkVertexInputBindingDescription vertex_bindings[MGFX_SHADER_MAX_VERTEX_BINDING];
-    int vertex_binding_count;
+    VkVertexInputBindingDescription vertex_binding;
 
-    VkVertexInputAttributeDescription vertex_attributes[MGFX_SHADER_MAX_VERTEX_ATTRIBUTES];
+    VkVertexInputAttributeDescription vertex_attributes[MGFX_VERTEX_ATTRIBUTE_COUNT];
     int vertex_attribute_count;
 
     VkShaderModule module;

@@ -51,8 +51,8 @@ layout(set = 0, binding = 0) uniform material {
 	float normal_factor;
 	float padding;
 
-        vec3 emissive_factor;
-        float emissive_strength;
+    vec3 emissive_factor;
+    float emissive_strength;
 };
 
 layout(set = 0, binding = 1) uniform sampler2D albedo_map;

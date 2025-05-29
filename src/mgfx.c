@@ -1,5 +1,6 @@
 #include "mgfx/mgfx.h"
 #include "mgfx/defines.h"
+#include "mx/mx_string.h"
 
 #include <mx/mx_log.h>
 #include <mx/mx_math.h>
@@ -9,6 +10,7 @@
 #include <mx/mx_file.h>
 #include <mx/mx_hash.h>
 #include <mx/mx_memory.h>
+#include <stdint.h>
 #include <string.h>
 
 #ifdef MX_MACOS
@@ -34,35 +36,35 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb/stb_truetype.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
 typedef struct mgfx_texture {
     mgfx_imgh imgh;        // VkImage
     uint64_t address_mode; // VkSamplerAddressMode
     uint64_t sampler;      // VkSampler
 } mgfx_texture;
 
+enum { MGFX_ENTRY_MAX_NAME = 64 };
 typedef struct mgfx_program {
+    char name[MGFX_ENTRY_MAX_NAME];
     mgfx_sh shaders[MGFX_SHADER_STAGE_COUNT];
     uint64_t dsls[MGFX_SHADER_MAX_DESCRIPTOR_SET]; // VkPipelineLayout
 
     // Only for graphics pipelines
     union {
         struct {
-            int32_t primitive_topology; // VkPrimitiveTopology
-            int32_t polygon_mode;       // VkPolygonMode
-            int32_t cull_mode;          // VkPolygonMode
+            int32_t primitive_topology;
+            int32_t polygon_mode;
+            int32_t cull_mode;
         };
     };
 
     uint64_t pipeline;        // VkPipeline
     uint64_t pipeline_layout; // VkPipelineLayout
+
+    mx_bool has_mgfx_pc;
 } mgfx_program;
-
-typedef enum queues_vk {
-    MGFX_QUEUE_GRAPHICS = 0,
-    MGFX_QUEUE_PRESENT,
-
-    MGFX_QUEUE_COUNT,
-} queues_vk;
 
 // Renderer api
 void buffer_create(size_t size,
@@ -103,23 +105,23 @@ const VkFormat k_surface_fmt = VK_FORMAT_B8G8R8A8_SRGB;
 const VkColorSpaceKHR k_surface_color_space = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 const VkPresentModeKHR k_present_mode = VK_PRESENT_MODE_FIFO_KHR;
 
+// TODO: Keep track of descripotr pool memory allocations
 const VkDescriptorPoolSize k_ds_pool_sizes[] = {
     {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 128},
+    {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 128},
     {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 32},
-
     {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 128},
 };
-
-uint32_t k_ds_pool_sizes_count = 3;
+uint32_t k_ds_pool_sizes_count = 4;
 
 #ifdef MX_DEBUG
-VkResult create_debug_util_messenger_ext(VkInstance instance,
-                                         const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                         const VkAllocationCallbacks* pAllocator,
-                                         VkDebugUtilsMessengerEXT* pDebugMessenger) {
-    PFN_vkCreateDebugUtilsMessengerEXT func =
-        (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance,
-                                                                  "vkCreateDebugUtilsMessengerEXT");
+VkResult
+create_debug_util_messenger_ext(VkInstance instance,
+                                const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                const VkAllocationCallbacks* pAllocator,
+                                VkDebugUtilsMessengerEXT* pDebugMessenger) {
+    PFN_vkCreateDebugUtilsMessengerEXT func = (PFN_vkCreateDebugUtilsMessengerEXT)
+        vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != NULL) {
         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
     } else {
@@ -130,9 +132,8 @@ VkResult create_debug_util_messenger_ext(VkInstance instance,
 void destroy_create_debug_util_messenger_ext(VkInstance instance,
                                              VkDebugUtilsMessengerEXT debugMessenger,
                                              const VkAllocationCallbacks* pAllocator) {
-    PFN_vkDestroyDebugUtilsMessengerEXT func =
-        (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-            instance, "vkDestroyDebugUtilsMessengerEXT");
+    PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT)
+        vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != NULL) {
         func(instance, debugMessenger, pAllocator);
     }
@@ -183,8 +184,8 @@ static VkPhysicalDeviceProperties s_phys_device_props;
 static VkDevice s_device = VK_NULL_HANDLE;
 static VmaAllocator s_allocator;
 
-static VkQueue s_queues[MGFX_QUEUE_COUNT];
-static uint32_t s_queue_indices[MGFX_QUEUE_COUNT];
+static VkQueue s_queues[VK_QUEUE_COUNT];
+static uint32_t s_queue_indices[VK_QUEUE_COUNT];
 
 static VkSurfaceKHR s_surface = VK_NULL_HANDLE;
 static VkSurfaceCapabilitiesKHR s_surface_caps;
@@ -195,19 +196,19 @@ static uint32_t s_frame_idx = 0;
 
 static VkDescriptorPool s_ds_pool;
 
-enum { MGFX_MAX_FRAME_BUFFER_COPIES = 300 };
-static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
+enum { MAX_FRAME_BUFFER_COPIES = 300 };
+static buffer_to_buffer_copy_vk s_buffer_to_buffer_copy_queue[MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_buffer_copy_count = 0;
 
-static buffer_to_image_copy_vk s_buffer_to_image_copy_queue[MGFX_MAX_FRAME_BUFFER_COPIES];
+static buffer_to_image_copy_vk s_buffer_to_image_copy_queue[MAX_FRAME_BUFFER_COPIES];
 static uint32_t s_buffer_to_image_copy_count = 0;
 
-static ring_buffer_vk s_tvb_pool; // Transient vertex buffer pool
-static ring_buffer_vk s_tib_pool; // Transient index buffer pool
+static ring_buffer_vk s_transient_vertex_buffer_pool;
+static ring_buffer_vk s_transient_index_buffer_pool;
 
-static mgfx_transient_buffer s_tsbs[MGFX_MAX_FRAME_BUFFER_COPIES];
-static uint32_t s_tsbs_count = 0;
-static ring_buffer_vk s_tsb_pool; // Transient staging buffer pool
+static mgfx_transient_buffer s_tsbs[MAX_FRAME_BUFFER_COPIES];
+static uint32_t s_transient_staging_buffer_count = 0;
+static ring_buffer_vk s_transient_staging_buffer_pool;
 
 void image_create(const mgfx_image_info* info,
                   VkImageUsageFlags usage,
@@ -233,7 +234,7 @@ void image_create(const mgfx_image_info* info,
         .usage = usage,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &s_queue_indices[MGFX_QUEUE_GRAPHICS],
+        .pQueueFamilyIndices = &s_queue_indices[VK_QUEUE_GRAPHICS],
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
 
@@ -242,8 +243,12 @@ void image_create(const mgfx_image_info* info,
         .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     };
 
-    VK_CHECK(vmaCreateImage(
-        s_allocator, &image_info, &alloc_info, &image->handle, &image->allocation, NULL));
+    VK_CHECK(vmaCreateImage(s_allocator,
+                            &image_info,
+                            &alloc_info,
+                            &image->handle,
+                            &image->allocation,
+                            NULL));
 
 #ifdef MX_DEBUG
     static size_t mem_acc = 0;
@@ -261,8 +266,9 @@ void image_create(const mgfx_image_info* info,
                      image_alloc_info.size / MX_KB,
                      (float)mem_acc / MX_MB);
     } else {
-        MX_LOG_TRACE(
-            "[ImageAlloc] + %lu b = %.2f mb", image_alloc_info.size, (float)mem_acc / MX_MB);
+        MX_LOG_TRACE("[ImageAlloc] + %lu b = %.2f mb",
+                     image_alloc_info.size,
+                     (float)mem_acc / MX_MB);
     }
 
 #endif
@@ -304,30 +310,34 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
                                size_t len,
                                mgfx_transient_buffer* out);
 void image_update(const void* data, size_t size, image_vk* image) {
-    MX_ASSERT(s_tsbs_count < MGFX_MAX_FRAME_BUFFER_COPIES);
-    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_tsbs_count++];
-    transient_buffer_allocate(&s_tsb_pool, data, size, staging_buffer);
+    MX_ASSERT(s_transient_staging_buffer_count < MAX_FRAME_BUFFER_COPIES);
+    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_transient_staging_buffer_count++];
+    transient_buffer_allocate(&s_transient_staging_buffer_pool,
+                              data,
+                              size,
+                              staging_buffer);
 
-    MX_ASSERT(s_buffer_to_image_copy_count < MGFX_MAX_FRAME_BUFFER_COPIES);
-    s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] = (buffer_to_image_copy_vk){
-        .copy =
-            {
-                .bufferOffset = staging_buffer->offset,
-                .bufferRowLength = 0,
-                .bufferImageHeight = 0,
-                .imageSubresource =
-                    {
-                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                        .mipLevel = 0,
-                        .baseArrayLayer = 0,
-                        .layerCount = 1,
-                    },
-                .imageOffset = 0,
-                .imageExtent = image->extent,
-            },
-        .src = &s_tsb_pool.buffer,
-        .dst = image,
-    };
+    MX_ASSERT(s_buffer_to_image_copy_count < MAX_FRAME_BUFFER_COPIES);
+    s_buffer_to_image_copy_queue[s_buffer_to_image_copy_count++] =
+        (buffer_to_image_copy_vk){
+            .copy =
+                {
+                    .bufferOffset = staging_buffer->offset,
+                    .bufferRowLength = 0,
+                    .bufferImageHeight = 0,
+                    .imageSubresource =
+                        {
+                            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                            .mipLevel = 0,
+                            .baseArrayLayer = 0,
+                            .layerCount = 1,
+                        },
+                    .imageOffset = 0,
+                    .imageExtent = image->extent,
+                },
+            .src = &s_transient_staging_buffer_pool.buffer,
+            .dst = image,
+        };
 };
 
 void image_destroy(image_vk* image) {
@@ -337,8 +347,11 @@ void image_destroy(image_vk* image) {
     image->layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
-int swapchain_create(
-    VkSurfaceKHR surface, uint32_t w, uint32_t h, swapchain_vk* sc, mx_allocator_t allocator) {
+int swapchain_create(VkSurfaceKHR surface,
+                     uint32_t w,
+                     uint32_t h,
+                     swapchain_vk* sc,
+                     mx_allocator_t allocator) {
     sc->extent.width = w;
     sc->extent.height = h;
 
@@ -364,10 +377,10 @@ int swapchain_create(
     swapchain_info.imageUsage =
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-    if (s_queue_indices[MGFX_QUEUE_GRAPHICS] != s_queue_indices[MGFX_QUEUE_PRESENT]) {
+    if (s_queue_indices[VK_QUEUE_GRAPHICS] != s_queue_indices[VK_QUEUE_PRESENT]) {
         swapchain_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         swapchain_info.queueFamilyIndexCount = 2;
-        swapchain_info.pQueueFamilyIndices = &s_queue_indices[MGFX_QUEUE_PRESENT];
+        swapchain_info.pQueueFamilyIndices = &s_queue_indices[VK_QUEUE_PRESENT];
     } else {
         swapchain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         swapchain_info.queueFamilyIndexCount = 0;
@@ -470,8 +483,12 @@ void buffer_create(size_t size,
         .usage = VMA_MEMORY_USAGE_AUTO,
     };
 
-    VK_CHECK(vmaCreateBuffer(
-        s_allocator, &info, &alloc_info, &buffer->handle, &buffer->allocation, NULL));
+    VK_CHECK(vmaCreateBuffer(s_allocator,
+                             &info,
+                             &alloc_info,
+                             &buffer->handle,
+                             &buffer->allocation,
+                             NULL));
 
 #ifdef MX_DEBUG
     static size_t buffer_memory_accum = 0;
@@ -497,7 +514,10 @@ void buffer_create(size_t size,
 };
 
 // Forward declare transient for staging buffers
-void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const void* data) {
+void buffer_update(buffer_vk* buffer,
+                   size_t buffer_offset,
+                   size_t size,
+                   const void* data) {
     size_t dst_offset = buffer_offset;
 
     VmaAllocationInfo alloc_info;
@@ -509,7 +529,8 @@ void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const v
     vkGetPhysicalDeviceMemoryProperties(s_phys_device, &mem_props);
     uint32_t memory_type_idx = alloc_info.memoryType;
 
-    VkMemoryPropertyFlags memory_flags = mem_props.memoryTypes[memory_type_idx].propertyFlags;
+    VkMemoryPropertyFlags memory_flags =
+        mem_props.memoryTypes[memory_type_idx].propertyFlags;
 
     if ((memory_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
         memcpy((uint8_t*)alloc_info.pMappedData + dst_offset, data, size);
@@ -517,21 +538,25 @@ void buffer_update(buffer_vk* buffer, size_t buffer_offset, size_t size, const v
     }
 
     // TODO: Recover and resize
-    MX_ASSERT(s_tsbs_count < MGFX_MAX_FRAME_BUFFER_COPIES);
-    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_tsbs_count++];
-    transient_buffer_allocate(&s_tsb_pool, data, size, staging_buffer);
+    MX_ASSERT(s_transient_staging_buffer_count < MAX_FRAME_BUFFER_COPIES);
+    mgfx_transient_buffer* staging_buffer = &s_tsbs[s_transient_staging_buffer_count++];
+    transient_buffer_allocate(&s_transient_staging_buffer_pool,
+                              data,
+                              size,
+                              staging_buffer);
 
-    MX_ASSERT(s_buffer_to_buffer_copy_count < MGFX_MAX_FRAME_BUFFER_COPIES);
-    s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] = (buffer_to_buffer_copy_vk){
-        .copy =
-            {
-                .srcOffset = staging_buffer->offset,
-                .dstOffset = dst_offset,
-                .size = size,
-            },
-        .src = &s_tsb_pool.buffer,
-        .dst = buffer,
-    };
+    MX_ASSERT(s_buffer_to_buffer_copy_count < MAX_FRAME_BUFFER_COPIES);
+    s_buffer_to_buffer_copy_queue[s_buffer_to_buffer_copy_count++] =
+        (buffer_to_buffer_copy_vk){
+            .copy =
+                {
+                    .srcOffset = staging_buffer->offset,
+                    .dstOffset = dst_offset,
+                    .size = size,
+                },
+            .src = &s_transient_staging_buffer_pool.buffer,
+            .dst = buffer,
+        };
 }
 
 void buffer_resize(buffer_vk* buffer, size_t size) {
@@ -542,7 +567,8 @@ void buffer_resize(buffer_vk* buffer, size_t size) {
     vkGetPhysicalDeviceMemoryProperties(s_phys_device, &mem_props);
     uint32_t memory_type_idx = alloc_info.memoryType;
 
-    VkMemoryPropertyFlags memory_flags = mem_props.memoryTypes[memory_type_idx].propertyFlags;
+    VkMemoryPropertyFlags memory_flags =
+        mem_props.memoryTypes[memory_type_idx].propertyFlags;
 
     MX_ASSERT(alloc_info.size <= size,
               "[Buffer] Cannot resize to less than or equal of previous size!");
@@ -557,18 +583,22 @@ void buffer_destroy(buffer_vk* buffer) {
     buffer->allocation = VK_NULL_HANDLE;
 }
 
-void vertex_buffer_create(const void* data, size_t len, vertex_buffer_vk* buffer) {
-    buffer_create(
-        len, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, buffer);
+void vertex_buffer_create(const void* data, size_t len, buffer_vk* vb) {
+    buffer_create(len,
+                  VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  0,
+                  vb);
 
     if (data) {
-        buffer_update(buffer, 0, len, data);
+        buffer_update(vb, 0, len, data);
     }
 };
 
 void index_buffer_create(const void* data, size_t len, index_buffer_vk* buffer) {
-    buffer_create(
-        len, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 0, buffer);
+    buffer_create(len,
+                  VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                  0,
+                  buffer);
 
     if (data) {
         buffer_update(buffer, 0, len, data);
@@ -578,6 +608,17 @@ void index_buffer_create(const void* data, size_t len, index_buffer_vk* buffer) 
 void uniform_buffer_create(const void* data, size_t len, uniform_buffer_vk* buffer) {
     buffer_create(len,
                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                  VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+                  buffer);
+
+    if (data) {
+        buffer_update(buffer, 0, len, data);
+    }
+};
+
+void storage_buffer_create(const void* data, size_t len, storage_buffer_vk* buffer) {
+    buffer_create(len,
+                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                   VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
                   buffer);
 
@@ -612,9 +653,9 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
         uint32_t overflow = len - free_size;
         if (overflow > pool->tail) {
             // TODO:Resize
-            MX_ASSERT(
-                MX_FALSE,
-                "[TransientBuffer] allocation failed. Must consume allocated transient buffers!");
+            MX_ASSERT(MX_FALSE,
+                      "[TransientBuffer] allocation failed. Must consume "
+                      "allocated transient buffers!");
         }
 
         offset = 0;
@@ -625,7 +666,8 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
     buffer_update(&pool->buffer, offset, len, data);
 
     *out = (mgfx_transient_buffer){
-        .size = (uint32_t)len + padding,
+        .requested_size = (uint32_t)len,
+        .actual_size = (uint32_t)len + padding,
         .offset = offset,
         .buffer_handle = (mx_ptr_t)pool->buffer.handle,
     };
@@ -633,23 +675,31 @@ void transient_buffer_allocate(ring_buffer_vk* pool,
     pool->head = (uint32_t)((pool->head + len + padding) % pool->size);
 }
 
-void transient_vertex_buffer_free(mgfx_transient_buffer* tvb) {
-    s_tvb_pool.tail = (s_tvb_pool.tail + tvb->size) % s_tvb_pool.size;
+void transient_vertex_buffer_free(const mgfx_transient_buffer* tvb) {
+    s_transient_vertex_buffer_pool.tail =
+        (s_transient_vertex_buffer_pool.tail + tvb->actual_size) %
+        s_transient_vertex_buffer_pool.size;
 }
 
-void transient_index_buffer_free(mgfx_transient_buffer* tib) {
-    s_tib_pool.tail = (s_tib_pool.tail + tib->size) % s_tib_pool.size;
+void transient_index_buffer_free(const mgfx_transient_buffer* tib) {
+    s_transient_index_buffer_pool.tail =
+        (s_transient_index_buffer_pool.tail + tib->actual_size) %
+        s_transient_index_buffer_pool.size;
 }
 
 void transient_staging_buffer_free(mgfx_transient_buffer* tsb) {
-    s_tsb_pool.tail = (s_tsb_pool.tail + tsb->size) % s_tsb_pool.size;
+    s_transient_staging_buffer_pool.tail =
+        (s_transient_staging_buffer_pool.tail + tsb->actual_size) %
+        s_transient_staging_buffer_pool.size;
 }
 
 void framebuffer_create(uint32_t color_attachment_count,
                         image_vk* color_attachments,
                         image_vk* depth_attachment,
                         framebuffer_vk* framebuffer) {
+
     framebuffer->color_attachment_count = color_attachment_count;
+
     for (uint32_t i = 0; i < color_attachment_count; i++) {
         framebuffer->color_attachments[i] = &color_attachments[i];
         image_create_view(framebuffer->color_attachments[i],
@@ -680,6 +730,18 @@ void framebuffer_destroy(framebuffer_vk* fb) {
     }
 }
 
+void shader_handle_struct(shader_vk* shader, const SpvReflectTypeDescription* td) {
+    for (uint32_t i = 0; i < td->member_count; i++) {
+        if ((td->members[i].type_flags & SPV_REFLECT_TYPE_FLAG_STRUCT) ==
+            SPV_REFLECT_TYPE_FLAG_STRUCT) {
+            MX_LOG_TRACE("\t - type_name: %s", td->members[i].struct_member_name);
+            shader_handle_struct(shader, &td->members[i]);
+        } else {
+            MX_LOG_TRACE("\t\t - %s", td->members[i].struct_member_name);
+        }
+    }
+}
+
 void shader_create(size_t length, const char* code, shader_vk* shader) {
     mx_scoped_allocator(10 * MX_KB) tmp = mx_scoped_allocator_create();
 
@@ -692,7 +754,9 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     SpvReflectResult result = spvReflectCreateShaderModule(length, code, &module);
     MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-    MX_LOG_INFO("Entry Point: %s (Stage: %u)", module.entry_points[0].name, module.entry_points[0].shader_stage);
+    MX_LOG_INFO("Entry Point: %s (Stage: %u)",
+                module.entry_points[0].name,
+                module.entry_points[0].shader_stage);
 
     if (module.shader_stage == SPV_REFLECT_SHADER_STAGE_VERTEX_BIT) {
         uint32_t input_count = 0;
@@ -703,7 +767,8 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             spvReflectEnumerateInputVariables(&module, &input_count, input_variables);
 
             // Sort by location and filter out built in variables.
-            const SpvReflectInterfaceVariable* sorted_iv[MGFX_SHADER_MAX_VERTEX_ATTRIBUTES] = {0};
+            const SpvReflectInterfaceVariable* sorted_iv[MGFX_VERTEX_ATTRIBUTE_COUNT] = {
+                0};
             uint32_t sorted_iv_count = 0;
             for (uint32_t i = 0; i < input_count; i++) {
                 const SpvReflectInterfaceVariable* input_variable = input_variables[i];
@@ -718,7 +783,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             shader->vertex_attribute_count = sorted_iv_count;
 
             uint32_t input_offset = 0;
-            for (uint32_t i = 0; i < MGFX_SHADER_MAX_VERTEX_ATTRIBUTES; i++) {
+            for (uint32_t i = 0; i < MGFX_VERTEX_ATTRIBUTE_COUNT; i++) {
                 const SpvReflectInterfaceVariable* input_variable = sorted_iv[i];
 
                 if (!input_variable) {
@@ -735,7 +800,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
                 input_offset += vk_format_size((VkFormat)input_variable->format);
 
                 MX_LOG_TRACE("input variable: %s", input_variable->name);
-                MX_LOG_TRACE("\tlocation: %u", input_variable->location);
+                MX_LOG_TRACE("\tlocation: (%u)", input_variable->location);
                 MX_LOG_TRACE("\toffset: %u", input_variable->word_offset.location);
                 MX_LOG_TRACE("\tformat: %u (%d bytes)",
                              input_variable->format,
@@ -748,8 +813,7 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             }
 
             if (shader->vertex_attribute_count > 0) {
-                shader->vertex_binding_count = 1;
-                shader->vertex_bindings[0] = (VkVertexInputBindingDescription){
+                shader->vertex_binding = (VkVertexInputBindingDescription){
                     .binding = 0,
                     .stride = input_offset,
                     .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
@@ -785,7 +849,11 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
                          bindings[i]->set,
                          bindings[i]->binding);
             MX_LOG_TRACE("\ttype: %u", bindings[i]->descriptor_type);
-            MX_LOG_TRACE("\toffset: %u", bindings[i]->resource_type);
+
+            if ((bindings[i]->type_description->type_flags &
+                 SPV_REFLECT_TYPE_FLAG_STRUCT) == SPV_REFLECT_TYPE_FLAG_STRUCT) {
+                shader_handle_struct(shader, bindings[i]->type_description);
+            }
         }
     }
 
@@ -803,12 +871,17 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
             MX_LOG_TRACE("\tstage: %u", module.shader_stage);
             MX_LOG_TRACE("\tsize: %u", push_constants[block_idx]->size);
             MX_LOG_TRACE("\tstride: %u", push_constants[block_idx]->array.stride);
-            for (uint32_t member_idx = 0; member_idx < push_constants[block_idx]->member_count;
+            for (uint32_t member_idx = 0;
+                 member_idx < push_constants[block_idx]->member_count;
                  member_idx++) {
-                MX_LOG_TRACE("\t - %s", push_constants[block_idx]->members[member_idx].name);
-                MX_LOG_TRACE("\t\t - offset: %u", push_constants[block_idx]->members[member_idx].offset);
-                MX_LOG_TRACE("\t\t - size: %u", push_constants[block_idx]->members[member_idx].size);
-                MX_LOG_TRACE("\t\t - stride: %u", push_constants[block_idx]->members[member_idx].array.stride);
+                MX_LOG_TRACE("\t - %s",
+                             push_constants[block_idx]->members[member_idx].name);
+                MX_LOG_TRACE("\t\t - offset: %u",
+                             push_constants[block_idx]->members[member_idx].offset);
+                MX_LOG_TRACE("\t\t - size: %u",
+                             push_constants[block_idx]->members[member_idx].size);
+                MX_LOG_TRACE("\t\t - stride: %u",
+                             push_constants[block_idx]->members[member_idx].array.stride);
                 shader->pc_ranges[block_idx] = (VkPushConstantRange){
                     .stageFlags = module.shader_stage,
                     .offset = push_constants[block_idx]->offset,
@@ -821,25 +894,30 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
 
     spvReflectDestroyShaderModule(&module);
 
-    VkShaderModuleCreateInfo info = {0};
-    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    info.pNext = NULL;
-    info.flags = 0;
-    info.codeSize = length;
-    info.pCode = (uint32_t*)(void*)code;
+    VkShaderModuleCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .codeSize = length,
+        .pCode = (uint32_t*)(void*)code,
+    };
 
     VK_CHECK(vkCreateShaderModule(s_device, &info, NULL, &shader->module));
 };
 
-void shader_destroy(shader_vk* shader) { vkDestroyShaderModule(s_device, shader->module, NULL); }
+void shader_destroy(shader_vk* shader) {
+    vkDestroyShaderModule(s_device, shader->module, NULL);
+}
 
 void pipeline_create_graphics(const shader_vk* vs,
                               const shader_vk* fs,
                               const framebuffer_vk* fb,
+                              const mgfx_vertex_layout* vl,
                               mgfx_program* program) {
     MX_ASSERT(vs != NULL, "Graphics program requires at least a valid vertex shader!");
 
-    const MGFX_SHADER_STAGE gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX, MGFX_SHADER_STAGE_FRAGMENT};
+    const MGFX_SHADER_STAGE gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX,
+                                            MGFX_SHADER_STAGE_FRAGMENT};
     uint32_t shader_stage_count = fs != NULL ? 2 : 1;
 
     VkGraphicsPipelineCreateInfo info = {0};
@@ -874,19 +952,49 @@ void pipeline_create_graphics(const shader_vk* vs,
 
     info.pStages = shader_stage_infos;
 
+    VkVertexInputAttributeDescription flat_vertex_attribs[MGFX_VERTEX_ATTRIBUTE_COUNT];
+    uint32_t flat_attrib_count = 0;
+
+    for (int i = 0; i < MGFX_VERTEX_ATTRIBUTE_COUNT; i++) {
+        if (flat_attrib_count == vs->vertex_attribute_count) {
+            break;
+        }
+
+        if (vs->vertex_attributes[i].format == VK_FORMAT_UNDEFINED) {
+            continue;
+        }
+
+        const mgfx_vertex_attribute attrib =
+            (mgfx_vertex_attribute)vs->vertex_attributes[i].location;
+
+        flat_vertex_attribs[flat_attrib_count++] = (VkVertexInputAttributeDescription){
+            .location = attrib,
+            .binding = vs->vertex_attributes[i].binding,
+            .offset = vl->offsets[attrib],
+            .format = vs->vertex_attributes[i].format,
+        };
+    }
+
+    VkVertexInputBindingDescription vertex_binding_desc = {
+        .binding = 0,
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        .stride = vl->stride,
+    };
+
     VkPipelineVertexInputStateCreateInfo vertex_input_state_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = NULL,
         .flags = 0,
-        .vertexBindingDescriptionCount = vs->vertex_binding_count,
-        .pVertexBindingDescriptions = vs->vertex_bindings,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &vertex_binding_desc,
         .vertexAttributeDescriptionCount = vs->vertex_attribute_count,
-        .pVertexAttributeDescriptions = vs->vertex_attributes,
+        .pVertexAttributeDescriptions = flat_vertex_attribs,
     };
     info.pVertexInputState = &vertex_input_state_info;
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state_info = {0};
-    input_assembly_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    input_assembly_state_info.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly_state_info.pNext = NULL;
     input_assembly_state_info.flags = 0;
     input_assembly_state_info.topology = (VkPrimitiveTopology)program->primitive_topology;
@@ -978,19 +1086,21 @@ void pipeline_create_graphics(const shader_vk* vs,
 
     VkPipelineColorBlendAttachmentState
         color_blend_attachments[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS];
-    for (uint32_t color_attachment_idx = 0; color_attachment_idx < fb->color_attachment_count;
+    for (uint32_t color_attachment_idx = 0;
+         color_attachment_idx < fb->color_attachment_count;
          color_attachment_idx++) {
-        color_blend_attachments[color_attachment_idx] = (VkPipelineColorBlendAttachmentState){
-            .blendEnable = VK_FALSE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
-        };
+        color_blend_attachments[color_attachment_idx] =
+            (VkPipelineColorBlendAttachmentState){
+                .blendEnable = VK_FALSE,
+                .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+                .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+                .colorBlendOp = VK_BLEND_OP_ADD,
+                .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+                .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+                .alphaBlendOp = VK_BLEND_OP_ADD,
+                .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+            };
     }
 
     VkPipelineColorBlendStateCreateInfo color_blend_state_info = {
@@ -1004,8 +1114,10 @@ void pipeline_create_graphics(const shader_vk* vs,
     };
     info.pColorBlendState = &color_blend_state_info;
 
-    const VkDynamicState k_dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    const uint32_t k_dynamic_state_count = sizeof(k_dynamic_states) / sizeof(VkDynamicState);
+    const VkDynamicState k_dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                               VK_DYNAMIC_STATE_SCISSOR};
+    const uint32_t k_dynamic_state_count =
+        sizeof(k_dynamic_states) / sizeof(VkDynamicState);
 
     VkPipelineDynamicStateCreateInfo dynamic_state_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -1018,20 +1130,22 @@ void pipeline_create_graphics(const shader_vk* vs,
 
     int ds_count = 0;
 
-    VkDescriptorSetLayoutBinding
-        flat_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {0};
+    VkDescriptorSetLayoutBinding flat_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET *
+                                               MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {0};
 
-    uint32_t max_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET * MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {
-        0};
+    uint32_t max_bindings[MGFX_SHADER_MAX_DESCRIPTOR_SET *
+                          MGFX_SHADER_MAX_DESCRIPTOR_BINDING] = {0};
 
     VkDescriptorSetLayout ds_layouts[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     memset(ds_layouts, 0, sizeof(VkDescriptorSetLayout) * MGFX_SHADER_MAX_DESCRIPTOR_SET);
 
     VkPushConstantRange flat_pc_ranges[MGFX_SHADER_MAX_PUSH_CONSTANTS];
-    memset(flat_pc_ranges, 0, sizeof(VkPushConstantRange) * MGFX_SHADER_MAX_PUSH_CONSTANTS);
+    memset(flat_pc_ranges,
+           0,
+           sizeof(VkPushConstantRange) * MGFX_SHADER_MAX_PUSH_CONSTANTS);
     int flat_pc_range_count = 0;
 
-    // Resolve multi stage descriptor bindings
+    // Resolve multi stage descriptor bindings and push constants
     for (int stage_idx = 0; stage_idx < 2; stage_idx++) {
         const shader_vk* shader = (stage_idx == 0) ? vs : fs;
 
@@ -1049,7 +1163,8 @@ void pipeline_create_graphics(const shader_vk* vs,
             };
 
             uint32_t binding = 0;
-            for (int processed_bindings = 0; processed_bindings < ds->binding_count; binding++) {
+            for (int processed_bindings = 0; processed_bindings < ds->binding_count;
+                 binding++) {
                 MX_ASSERT(binding < MGFX_SHADER_MAX_DESCRIPTOR_BINDING);
 
                 // Skip unbound bindings
@@ -1064,8 +1179,9 @@ void pipeline_create_graphics(const shader_vk* vs,
                     &flat_bindings[ds_idx * MGFX_SHADER_MAX_DESCRIPTOR_BINDING + binding];
 
                 if (ds_binding->stageFlags != 0) {
-                    ds_binding->stageFlags |=
-                        stage_idx == 0 ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+                    ds_binding->stageFlags |= stage_idx == 0
+                                                  ? VK_SHADER_STAGE_VERTEX_BIT
+                                                  : VK_SHADER_STAGE_FRAGMENT_BIT;
                 } else {
                     *ds_binding = ds->bindings[binding];
                 }
@@ -1074,11 +1190,13 @@ void pipeline_create_graphics(const shader_vk* vs,
             }
         }
 
+        // TODO: Check for built in mgfx pc, for bindless textures
         for (int pc_index = 0; pc_index < shader->pc_count; pc_index++) {
-            flat_pc_ranges[flat_pc_range_count] = shader->pc_ranges[flat_pc_range_count];
+            flat_pc_ranges[flat_pc_range_count] = shader->pc_ranges[pc_index];
             ++flat_pc_range_count;
+
+            program->has_mgfx_pc = MX_TRUE;
         }
-        flat_pc_range_count = 1;
     }
 
     for (int ds_idx = 0; ds_idx < ds_count; ds_idx++) {
@@ -1090,8 +1208,11 @@ void pipeline_create_graphics(const shader_vk* vs,
             .pBindings = &flat_bindings[ds_idx * MGFX_SHADER_MAX_DESCRIPTOR_BINDING],
         };
 
-        VK_CHECK(vkCreateDescriptorSetLayout(
-            s_device, &dsl_info, NULL, (VkDescriptorSetLayout*)&program->dsls[ds_idx]));
+        VK_CHECK(
+            vkCreateDescriptorSetLayout(s_device,
+                                        &dsl_info,
+                                        NULL,
+                                        (VkDescriptorSetLayout*)&program->dsls[ds_idx]));
         ds_layouts[ds_idx] = (VkDescriptorSetLayout)program->dsls[ds_idx];
     }
 
@@ -1105,8 +1226,10 @@ void pipeline_create_graphics(const shader_vk* vs,
         .pPushConstantRanges = flat_pc_ranges,
     };
 
-    VK_CHECK(vkCreatePipelineLayout(
-        s_device, &pipeline_layout_info, NULL, (VkPipelineLayout*)&program->pipeline_layout));
+    VK_CHECK(vkCreatePipelineLayout(s_device,
+                                    &pipeline_layout_info,
+                                    NULL,
+                                    (VkPipelineLayout*)&program->pipeline_layout));
     info.layout = (VkPipelineLayout)program->pipeline_layout;
 
     // Dynamic Rendering.
@@ -1129,8 +1252,12 @@ void pipeline_create_graphics(const shader_vk* vs,
     };
     info.pNext = &rendering_create_info;
 
-    VK_CHECK(
-        vkCreateGraphicsPipelines(s_device, NULL, 1, &info, NULL, (VkPipeline*)&program->pipeline));
+    VK_CHECK(vkCreateGraphicsPipelines(s_device,
+                                       NULL,
+                                       1,
+                                       &info,
+                                       NULL,
+                                       (VkPipeline*)&program->pipeline));
 }
 
 void pipeline_destroy(mgfx_program* program) {
@@ -1140,8 +1267,9 @@ void pipeline_destroy(mgfx_program* program) {
             continue;
         }
 
-        vkDestroyDescriptorSetLayout(
-            s_device, (VkDescriptorSetLayout)program->dsls[descriptor_idx], NULL);
+        vkDestroyDescriptorSetLayout(s_device,
+                                     (VkDescriptorSetLayout)program->dsls[descriptor_idx],
+                                     NULL);
     }
 
     vkDestroyPipelineLayout(s_device, (VkPipelineLayout)program->pipeline_layout, NULL);
@@ -1203,29 +1331,43 @@ mx_bool swapchain_update(const frame_vk* frame, int width, int height, swapchain
 
 // ~ VULKAN RENDERER  ~ //
 
-void vertex_layout_begin(mgfx_vertex_layout* vl) { memset(vl, 0, sizeof(mgfx_vertex_layout)); }
+void mgfx_vertex_layout_begin(mgfx_vertex_layout* vl) {
+    memset(vl, 0, sizeof(mgfx_vertex_layout));
+    memset(vl->attributes, MGFX_VERTEX_ATTRIBUTE_MAX, sizeof(vl->attributes));
+}
 
-void vertex_layout_add(mgfx_vertex_layout* vl, mgfx_vertex_attribute attribute, size_t size) {
-    vl->attribute_offsets[attribute] = vl->stride;
-    vl->attribute_sizes[attribute] = size;
+void mgfx_vertex_layout_add(mgfx_vertex_layout* vl,
+                            mgfx_vertex_attribute attribute,
+                            size_t size) {
+    if (vl->sizes[attribute] > 0) {
+        MX_LOG_WARN("Vertex Attribute %d already assigned!");
+        return;
+    };
+
+    vl->offsets[attribute] = vl->stride;
+
+    vl->sizes[attribute] = size;
     vl->stride += size;
+
+    vl->attributes[vl->attribute_count++] = attribute;
 };
 
-void vertex_layout_end(mgfx_vertex_layout* vl) {}
+void mgfx_vertex_layout_end(mgfx_vertex_layout* vl) {}
 
-const mgfx_built_in_vertex MGFX_FS_QUAD_VERTICES[4] = {
+const mgfx_pntuc32f MGFX_FS_QUAD_VERTICES[4] = {
     // Vertex 0: Bottom-left
-    {{-1.0f, -1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
+    {.position = {-1.0f, -1.0f, 1.0f}, .uv = {0.0f, 1.0f}},
 
     // Vertex 1: Bottom-right
-    {{1.0f, -1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
+    {.position = {1.0f, -1.0f, 1.0f}, .uv = {1.0f, 1.0f}},
 
     // Vertex 2: Top-right
-    {{1.0f, 1.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+    {.position = {1.0f, 1.0f, 1.0f}, .uv = {1.0f, 0.0f}},
 
     // Vertex 3: Top-left
-    {{-1.0f, 1.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 1.0f, 0.0f, 1.0f}},
+    {.position = {-1.0f, 1.0f, 1.0f}, .uv = {0.0f, 0.0f}},
 };
+mgfx_vertex_layout MGFX_PNTU32F_LAYOUT;
 
 const uint32_t MGFX_FS_QUAD_INDICES[6] = {0, 1, 2, 2, 3, 0};
 
@@ -1236,21 +1378,18 @@ typedef struct mgfx_draw {
     } desc_sets[MGFX_SHADER_MAX_DESCRIPTOR_SET];
 
     struct {
-        float model[16];
-        float view[16];
+        mx_mat4 model;
+        mx_mat4 view;
         float proj[16];
-        float view_inv[16];
-    } draw_pc;
 
-    mgfx_vbh vbhs[4];
-    uint32_t vbh_count;
+        mx_mat4 model_inv;
+        mx_mat4 view_inv;
+    } pc;
 
+    mgfx_vbh vbh;
     mgfx_ibh ibh;
 
-    // Transient draw
-    mgfx_transient_buffer tvbs[4];
-    uint32_t tvbh_count;
-
+    mgfx_transient_vb tvb;
     mgfx_transient_buffer tib;
 
     mgfx_ph ph;
@@ -1322,6 +1461,15 @@ typedef struct framebuffer_entry {
 } framebuffer_entry;
 static framebuffer_entry* s_framebuffer_table;
 
+typedef struct vb_info {
+    mx_str name;
+    mgfx_vertex_layout vl;
+} vb_info;
+
+mx_map_t(mgfx_vbh, vb_info, 1000) vb_infos;
+mx_map_find_fn(vb_info_find, mgfx_vbh, vb_info);
+mx_map_insert_fn(vb_info_insert, mgfx_vbh, vb_info);
+
 mgfx_fbh s_view_targets[0xFF];
 VkClearColorValue s_view_clears[0XFF] = {0};
 
@@ -1390,19 +1538,22 @@ int mgfx_init(const mgfx_init_info* info) {
     VK_CHECK(vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, NULL));
     VkExtensionProperties* avail_props =
         mx_alloc(tmp, avail_prop_count * sizeof(VkExtensionProperties));
-    VK_CHECK(vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, avail_props));
+    VK_CHECK(
+        vkEnumerateInstanceExtensionProperties(NULL, &avail_prop_count, avail_props));
 
     for (int req_index = 0; req_index < k_req_ext_count; req_index++) {
         int validated = -1;
         for (uint32_t avail_index = 0; avail_index < avail_prop_count; avail_index++) {
-            if (strcmp(k_req_exts[req_index], avail_props[avail_index].extensionName) == 0) {
+            if (strcmp(k_req_exts[req_index], avail_props[avail_index].extensionName) ==
+                0) {
                 validated = MX_SUCCESS;
                 continue;
             }
         }
 
         if (validated != MX_SUCCESS) {
-            MX_LOG_ERROR("Extension required not supported: %s!\n", k_req_exts[req_index]);
+            MX_LOG_ERROR("Extension required not supported: %s!\n",
+                         k_req_exts[req_index]);
             return -1;
         }
     }
@@ -1414,7 +1565,8 @@ int mgfx_init(const mgfx_init_info* info) {
     // Check and enable validation layers.
     uint32_t layer_prop_count;
     vkEnumerateInstanceLayerProperties(&layer_prop_count, NULL);
-    VkLayerProperties* layer_props = mx_alloc(tmp, sizeof(VkLayerProperties) * layer_prop_count);
+    VkLayerProperties* layer_props =
+        mx_alloc(tmp, sizeof(VkLayerProperties) * layer_prop_count);
     vkEnumerateInstanceLayerProperties(&layer_prop_count, layer_props);
 
     const char* validationLayers = {"VK_LAYER_KHRONOS_validation"};
@@ -1433,23 +1585,29 @@ int mgfx_init(const mgfx_init_info* info) {
 
     // Extension functions.
     vk_cmd_begin_rendering_khr =
-        (PFN_vkCmdBeginRenderingKHR)vkGetInstanceProcAddr(s_instance, "vkCmdBeginRenderingKHR");
+        (PFN_vkCmdBeginRenderingKHR)vkGetInstanceProcAddr(s_instance,
+                                                          "vkCmdBeginRenderingKHR");
     vk_cmd_end_rendering_khr =
-        (PFN_vkCmdEndRenderingKHR)vkGetInstanceProcAddr(s_instance, "vkCmdEndRenderingKHR");
+        (PFN_vkCmdEndRenderingKHR)vkGetInstanceProcAddr(s_instance,
+                                                        "vkCmdEndRenderingKHR");
 
 #ifdef MX_DEBUG
     VkDebugUtilsMessengerCreateInfoEXT debug_messenger_info = {0};
     debug_messenger_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    debug_messenger_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debug_messenger_info.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     debug_messenger_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                                        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     debug_messenger_info.pfnUserCallback = vk_debug_callback;
     debug_messenger_info.pUserData = NULL;
 
-    create_debug_util_messenger_ext(s_instance, &debug_messenger_info, NULL, &s_debug_messenger);
+    create_debug_util_messenger_ext(s_instance,
+                                    &debug_messenger_info,
+                                    NULL,
+                                    &s_debug_messenger);
 #endif
     if (choose_physical_device_vk(s_instance,
                                   k_req_device_ext_count,
@@ -1464,23 +1622,30 @@ int mgfx_init(const mgfx_init_info* info) {
     VK_CHECK(get_window_surface_vk(s_instance, info->nwh, &s_surface));
 
     uint32_t queue_family_props_count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(s_phys_device, &queue_family_props_count, NULL);
+    vkGetPhysicalDeviceQueueFamilyProperties(s_phys_device,
+                                             &queue_family_props_count,
+                                             NULL);
     VkQueueFamilyProperties* queue_family_props =
         mx_alloc(tmp, sizeof(VkQueueFamilyProperties) * queue_family_props_count);
 
-    vkGetPhysicalDeviceQueueFamilyProperties(
-        s_phys_device, &queue_family_props_count, queue_family_props);
+    vkGetPhysicalDeviceQueueFamilyProperties(s_phys_device,
+                                             &queue_family_props_count,
+                                             queue_family_props);
 
     int unique_queue_count = 0;
     for (uint32_t i = 0; i < queue_family_props_count; i++) {
-        if ((queue_family_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == VK_QUEUE_GRAPHICS_BIT) {
-            s_queue_indices[MGFX_QUEUE_GRAPHICS] = i;
+        if ((queue_family_props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) ==
+            VK_QUEUE_GRAPHICS_BIT) {
+            s_queue_indices[VK_QUEUE_GRAPHICS] = i;
         }
 
         VkBool32 present_supported = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(s_phys_device, i, s_surface, &present_supported);
+        vkGetPhysicalDeviceSurfaceSupportKHR(s_phys_device,
+                                             i,
+                                             s_surface,
+                                             &present_supported);
         if (present_supported == VK_TRUE) {
-            s_queue_indices[MGFX_QUEUE_PRESENT] = i;
+            s_queue_indices[VK_QUEUE_PRESENT] = i;
         }
 
         ++unique_queue_count;
@@ -1488,7 +1653,7 @@ int mgfx_init(const mgfx_init_info* info) {
         // Check if complete.
         int complete = MGFX_SUCCESS;
         for (uint16_t j = 0; j < unique_queue_count; j++) {
-            if (s_queue_indices[MGFX_QUEUE_PRESENT] == -1) {
+            if (s_queue_indices[VK_QUEUE_PRESENT] == -1) {
                 complete = !MGFX_SUCCESS;
             }
         }
@@ -1498,15 +1663,15 @@ int mgfx_init(const mgfx_init_info* info) {
         }
     }
 
-    for (uint16_t i = 0; i < MGFX_QUEUE_COUNT; i++) {
-        if (s_queue_indices[MGFX_QUEUE_PRESENT] == -1) {
+    for (uint16_t i = 0; i < VK_QUEUE_COUNT; i++) {
+        if (s_queue_indices[VK_QUEUE_PRESENT] == -1) {
             MX_LOG_ERROR("Failed to find graphics queue!");
             break;
         }
     }
 
     float queue_priority = 1.0f;
-    VkDeviceQueueCreateInfo queue_infos[MGFX_QUEUE_COUNT] = {0};
+    VkDeviceQueueCreateInfo queue_infos[VK_QUEUE_COUNT] = {0};
     for (uint16_t i = 0; i < unique_queue_count; i++) {
         queue_infos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_infos[i].pNext = NULL;
@@ -1544,14 +1709,21 @@ int mgfx_init(const mgfx_init_info* info) {
     PFN_vkCmdBeginRenderingKHR vkCmdBeginRenderingKHR;
 #endif
 
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(s_phys_device, s_surface, &s_surface_caps));
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(s_phys_device,
+                                                       s_surface,
+                                                       &s_surface_caps));
 
     uint32_t surface_fmt_count = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(s_phys_device, s_surface, &surface_fmt_count, NULL);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(s_phys_device,
+                                         s_surface,
+                                         &surface_fmt_count,
+                                         NULL);
     VkSurfaceFormatKHR* surface_fmts =
         mx_alloc(tmp, surface_fmt_count * sizeof(VkSurfaceFormatKHR));
-    vkGetPhysicalDeviceSurfaceFormatsKHR(
-        s_phys_device, s_surface, &surface_fmt_count, surface_fmts);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(s_phys_device,
+                                         s_surface,
+                                         &surface_fmt_count,
+                                         surface_fmts);
 
     int surface_format_found = -1;
     for (uint32_t i = 0; i < surface_fmt_count; i++) {
@@ -1565,20 +1737,32 @@ int mgfx_init(const mgfx_init_info* info) {
     MX_ASSERT(surface_format_found == MGFX_SUCCESS, "Required surface format not found!");
 
     uint32_t present_mode_count = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(s_phys_device, s_surface, &present_mode_count, NULL);
-    VkPresentModeKHR* present_modes = mx_alloc(tmp, surface_fmt_count * sizeof(VkPresentModeKHR));
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        s_phys_device, s_surface, &present_mode_count, present_modes);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(s_phys_device,
+                                              s_surface,
+                                              &present_mode_count,
+                                              NULL);
+    VkPresentModeKHR* present_modes =
+        mx_alloc(tmp, surface_fmt_count * sizeof(VkPresentModeKHR));
+    vkGetPhysicalDeviceSurfacePresentModesKHR(s_phys_device,
+                                              s_surface,
+                                              &present_mode_count,
+                                              present_modes);
     for (uint32_t i = 0; i < present_mode_count; i++) {
     }
 
     VkExtent2D swapchain_extent;
     choose_swapchain_extent_vk(&s_surface_caps, info->nwh, &swapchain_extent);
 
-    swapchain_create(s_surface, swapchain_extent.width, swapchain_extent.height, &s_swapchain, tmp);
+    swapchain_create(s_surface,
+                     swapchain_extent.width,
+                     swapchain_extent.height,
+                     &s_swapchain,
+                     tmp);
 
     VmaAllocatorCreateInfo allocator_info = {
-        .instance = s_instance, .physicalDevice = s_phys_device, .device = s_device,
+        .instance = s_instance,
+        .physicalDevice = s_phys_device,
+        .device = s_device,
         /*.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,*/
     };
     VK_CHECK(vmaCreateAllocator(&allocator_info, &s_allocator));
@@ -1588,9 +1772,10 @@ int mgfx_init(const mgfx_init_info* info) {
             .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             .pNext = NULL,
             .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-            .queueFamilyIndex = s_queue_indices[MGFX_QUEUE_GRAPHICS],
+            .queueFamilyIndex = s_queue_indices[VK_QUEUE_GRAPHICS],
         };
-        VK_CHECK(vkCreateCommandPool(s_device, &gfx_cmd_pool, NULL, &s_frames[i].cmd_pool));
+        VK_CHECK(
+            vkCreateCommandPool(s_device, &gfx_cmd_pool, NULL, &s_frames[i].cmd_pool));
 
         VkCommandBufferAllocateInfo buffer_alloc_info = {
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -1599,23 +1784,28 @@ int mgfx_init(const mgfx_init_info* info) {
             .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
             .commandBufferCount = 1,
         };
-        VK_CHECK(vkAllocateCommandBuffers(s_device, &buffer_alloc_info, &s_frames[i].cmd));
+        VK_CHECK(
+            vkAllocateCommandBuffers(s_device, &buffer_alloc_info, &s_frames[i].cmd));
 
         VkSemaphoreCreateInfo swapchain_semaphore_info = {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
         };
-        VK_CHECK(vkCreateSemaphore(
-            s_device, &swapchain_semaphore_info, NULL, &s_frames[i].swapchain_semaphore));
+        VK_CHECK(vkCreateSemaphore(s_device,
+                                   &swapchain_semaphore_info,
+                                   NULL,
+                                   &s_frames[i].swapchain_semaphore));
 
         VkSemaphoreCreateInfo render_semaphore_info = {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
             .pNext = NULL,
             .flags = 0,
         };
-        VK_CHECK(vkCreateSemaphore(
-            s_device, &render_semaphore_info, NULL, &s_frames[i].render_semaphore));
+        VK_CHECK(vkCreateSemaphore(s_device,
+                                   &render_semaphore_info,
+                                   NULL,
+                                   &s_frames[i].render_semaphore));
 
         VkFenceCreateInfo fence_info = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -1638,29 +1828,54 @@ int mgfx_init(const mgfx_init_info* info) {
     // Initialize staging buffers
     enum { MGFX_MAX_STAGING_BUFFER_SIZE = MX_MB * 500 };
     ring_buffer_create(MGFX_MAX_STAGING_BUFFER_SIZE,
-                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
-                       &s_tsb_pool);
+                       &s_transient_staging_buffer_pool);
 
     ring_buffer_create(MGFX_DEBUG_MAX_TEXT * 4 * 48,
-                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        0,
-                       &s_tvb_pool);
+                       &s_transient_vertex_buffer_pool);
 
     ring_buffer_create(MGFX_DEBUG_MAX_TEXT * 6 * sizeof(uint32_t),
-                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                        0,
-                       &s_tib_pool);
+                       &s_transient_index_buffer_pool);
 
     memset(s_view_targets, 0, sizeof(mgfx_fbh) * 0xFF);
 
     // Init mgfx
     mgfx_set_view_clear(MGFX_DEFAULT_VIEW_TARGET, (float[4]){0.0f, 0.0f, 0.0f, 1.0f});
 
+    // Init primitives
+    mgfx_vertex_layout_begin(&MGFX_PNTU32F_LAYOUT);
+    mgfx_vertex_layout_add(&MGFX_PNTU32F_LAYOUT,
+                           MGFX_VERTEX_ATTRIBUTE_POSITION,
+                           sizeof(mx_vec3));
+    mgfx_vertex_layout_add(&MGFX_PNTU32F_LAYOUT,
+                           MGFX_VERTEX_ATTRIBUTE_NORMAL,
+                           sizeof(mx_vec3));
+    mgfx_vertex_layout_add(&MGFX_PNTU32F_LAYOUT,
+                           MGFX_VERTEX_ATTRIBUTE_TEXCOORD0,
+                           sizeof(mx_vec2));
+    mgfx_vertex_layout_add(&MGFX_PNTU32F_LAYOUT,
+                           MGFX_VERTEX_ATTRIBUTE_COLOR,
+                           sizeof(mx_vec4));
+    mgfx_vertex_layout_add(&MGFX_PNTU32F_LAYOUT,
+                           MGFX_VERTEX_ATTRIBUTE_TANGENT,
+                           sizeof(mx_vec4));
+    mgfx_vertex_layout_end(&MGFX_PNTU32F_LAYOUT);
+
     // Init debug text
-    dbg_ui_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/text.vert.glsl.spv");
-    dbg_ui_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/text.frag.glsl.spv");
-    dbg_ui_ph = mgfx_program_create_graphics(dbg_ui_vsh, dbg_ui_fsh);
+    dbg_ui_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/mgfxDebugText.vert.spv");
+    dbg_ui_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/mgfxDebugText.frag.spv");
+    dbg_ui_ph = mgfx_program_create_graphics_ex(
+        dbg_ui_vsh,
+        dbg_ui_fsh,
+        &(mgfx_graphics_ex_create_info){.name = "mgfx_debug_text"});
 
     size_t font_file_size;
     if (mx_read_file(font_path, &font_file_size, NULL) != MX_SUCCESS) {
@@ -1691,19 +1906,13 @@ int mgfx_init(const mgfx_init_info* info) {
         .cube_map = MX_FALSE,
     };
 
-    dbg_ui_font_atlas_th = mgfx_texture_create_from_memory(
-        &img_info, VK_FILTER_LINEAR, atlas_bitmap, atlas_w * atlas_h);
+    dbg_ui_font_atlas_th = mgfx_texture_create_from_memory(&img_info,
+                                                           VK_FILTER_LINEAR,
+                                                           atlas_bitmap,
+                                                           atlas_w * atlas_h);
     dbg_ui_font_atlas_dh =
         mgfx_descriptor_create("u_diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     mgfx_set_texture(dbg_ui_font_atlas_dh, dbg_ui_font_atlas_th);
-
-    typedef struct glyph_vertex {
-        float position[3];
-        float uv_x;
-        float normal[3];
-        float uv_y;
-        float color[4];
-    } glyph_vertex;
 
     const mgfx_image_info texture_info = {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -1713,45 +1922,69 @@ int mgfx_init(const mgfx_init_info* info) {
         .cube_map = MX_FALSE,
     };
 
-    MGFX_WHITE_TEXTURE = mgfx_texture_create_from_memory(
-        &texture_info, VK_FILTER_NEAREST, (uint8_t[4]){255, 255, 255, 255}, 4);
+    MGFX_WHITE_TEXTURE = mgfx_texture_create_from_memory(&texture_info,
+                                                         VK_FILTER_NEAREST,
+                                                         (uint8_t[4]){255, 255, 255, 255},
+                                                         4);
 
-    MGFX_BLACK_TEXTURE = mgfx_texture_create_from_memory(
-        &texture_info, VK_FILTER_NEAREST, (uint8_t[4]){0, 0, 0, 0}, 4);
+    MGFX_BLACK_TEXTURE = mgfx_texture_create_from_memory(&texture_info,
+                                                         VK_FILTER_NEAREST,
+                                                         (uint8_t[4]){0, 0, 0, 0},
+                                                         4);
 
-    MGFX_LOCAL_NORMAL_TEXTURE = mgfx_texture_create_from_memory(
-        &texture_info, VK_FILTER_NEAREST, (uint8_t[4]){128, 128, 255, 255}, 4);
+    MGFX_LOCAL_NORMAL_TEXTURE =
+        mgfx_texture_create_from_memory(&texture_info,
+                                        VK_FILTER_NEAREST,
+                                        (uint8_t[4]){128, 128, 255, 255},
+                                        4);
 
     // Init gizmos
-    dbg_quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
-    dbg_quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
+    dbg_quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
+                                             sizeof(MGFX_FS_QUAD_VERTICES),
+                                             &MGFX_PNTU32F_LAYOUT);
+    dbg_quad_ibh =
+        mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     MX_LOG_SUCCESS("MGFX Initialized!");
     return MGFX_SUCCESS;
 }
 
-mgfx_vbh mgfx_vertex_buffer_create(const void* data, size_t len) {
+mgfx_vbh
+mgfx_vertex_buffer_create(const void* data, size_t len, const mgfx_vertex_layout* vl) {
+    if (len <= 0) {
+        MX_LOG_WARN("Attempting to create vertex buffer with size 0!");
+        return (mgfx_vbh){.idx = MGFX_INVALID_HANDLE};
+    };
+
+    if (!vl) {
+        MX_LOG_WARN("Attempting to create vertex buffer with null vertex layout!");
+        return (mgfx_vbh){.idx = MGFX_INVALID_HANDLE};
+    };
+
     buffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(buffer_entry));
     memset(entry, 0, sizeof(buffer_entry));
-
     vertex_buffer_create(data, len, &entry->value);
 
-    entry->key = (VkBuffer)entry->value.handle;
+    entry->key = entry->value.handle;
     HASH_ADD(hh, s_buffer_table, key, sizeof(mgfx_vbh), entry);
+
+    vb_info_insert(&vb_infos,
+                   (mgfx_vbh){.idx = (uint64_t)entry->key},
+                   &(vb_info){.vl = *vl});
 
     return (mgfx_vbh){.idx = (uint64_t)entry->key};
 }
 
 void mgfx_transient_vertex_buffer_allocate(const void* data,
                                            size_t len,
-                                           mgfx_transient_buffer* out) {
-    transient_buffer_allocate(&s_tvb_pool, data, len, out);
+                                           mgfx_transient_vb* out) {
+    transient_buffer_allocate(&s_transient_vertex_buffer_pool, data, len, &out->tb);
 }
 
 void mgfx_transient_index_buffer_allocate(const void* data,
                                           size_t len,
                                           mgfx_transient_buffer* out) {
-    transient_buffer_allocate(&s_tib_pool, data, len, out);
+    transient_buffer_allocate(&s_transient_index_buffer_pool, data, len, out);
 }
 
 mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
@@ -1767,7 +2000,7 @@ mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len) {
 }
 
 mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len) {
-    buffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(buffer_entry));
+    buffer_entry* entry = mx_alloc(MX_DEFAULT_ALLOCATOR, sizeof(buffer_entry));
     uniform_buffer_create(data, len, &entry->value);
 
     entry->key = entry->value.handle;
@@ -1776,7 +2009,20 @@ mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len) {
     return (mgfx_ubh){.idx = (uint64_t)entry->key};
 }
 
-void mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t len, size_t offset) {
+MX_API MX_NO_DISCARD mgfx_sbh mgfx_storage_buffer_create(const void* data, size_t len) {
+    buffer_entry* entry = mx_alloc(MX_DEFAULT_ALLOCATOR, sizeof(buffer_entry));
+    storage_buffer_create(data, len, &entry->value);
+
+    entry->key = entry->value.handle;
+    HASH_ADD(hh, s_buffer_table, key, sizeof(mgfx_sbh), entry);
+
+    return (mgfx_sbh){.idx = (uint64_t)entry->key};
+}
+
+void mgfx_buffer_update(uint64_t buffer_idx,
+                        const void* data,
+                        size_t len,
+                        size_t offset) {
     buffer_entry* entry;
     HASH_FIND(hh, s_buffer_table, &buffer_idx, sizeof(uint64_t), entry);
 
@@ -1838,9 +2084,26 @@ mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
     entry->value.shaders[MGFX_SHADER_STAGE_VERTEX] = vsh;
     entry->value.shaders[MGFX_SHADER_STAGE_FRAGMENT] = fsh;
 
-    entry->value.polygon_mode = ex_info->polygon_mode;
-    entry->value.primitive_topology = ex_info->primitive_topology;
+    switch (ex_info->polygon_mode) {
+    case MGFX_FILL:
+        entry->value.polygon_mode = VK_POLYGON_MODE_FILL;
+        break;
+    case MGFX_LINE:
+        entry->value.polygon_mode = VK_POLYGON_MODE_LINE;
+        break;
+    }
+
+    switch (ex_info->primitive_topology) {
+    case MGFX_TRIANGLE_LIST:
+        entry->value.primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        break;
+    }
+
     entry->value.cull_mode = ex_info->cull_mode;
+
+    if (ex_info->name.data != NULL) {
+        memcpy(entry->value.name, ex_info->name.c_str, mx_strlen(ex_info->name));
+    };
 
     if (ex_info->instanced) {
     }
@@ -1852,22 +2115,19 @@ mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
 
 mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
     const mgfx_graphics_ex_create_info gfx_create_info = {
-        .polygon_mode = VK_POLYGON_MODE_FILL,
-        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .cull_mode = VK_CULL_MODE_BACK_BIT,
+        .polygon_mode = MGFX_FILL,
+        .primitive_topology = MGFX_TRIANGLE_LIST,
+        .cull_mode = MGFX_CULL_BACK,
     };
 
     return mgfx_program_create_graphics_ex(vsh, fsh, &gfx_create_info);
 }
-
-mgfx_ph mgfx_program_create(mgfx_sh* sh) { return (mgfx_ph){0}; }
 
 mgfx_ph mgfx_program_create_compute(mgfx_sh csh) {
     program_entry* entry = mx_alloc(mx_default_allocator(), sizeof(program_entry));
     memset(entry, 0, sizeof(program_entry));
 
     entry->key.idx = (uint64_t)entry;
-
     entry->value.shaders[MGFX_SHADER_STAGE_COMPUTE] = csh;
 
     HASH_ADD(hh, s_program_table, key, sizeof(entry->key), entry);
@@ -1922,7 +2182,8 @@ mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
     memset(entry, 0, sizeof(texture_entry));
 
     entry->value.imgh =
-        mgfx_image_create(info, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        mgfx_image_create(info,
+                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
     image_entry* image_entry;
     HASH_FIND(hh, s_image_table, &entry->value.imgh, sizeof(mgfx_imgh), image_entry);
@@ -1950,7 +2211,10 @@ mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
         .unnormalizedCoordinates = VK_FALSE,
     };
 
-    VK_CHECK(vkCreateSampler(s_device, &sampler_info, NULL, (VkSampler*)&entry->value.sampler));
+    VK_CHECK(vkCreateSampler(s_device,
+                             &sampler_info,
+                             NULL,
+                             (VkSampler*)&entry->value.sampler));
 
     image_create_view(&image_entry->value,
                       VK_IMAGE_VIEW_TYPE_2D,
@@ -2015,9 +2279,39 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
         HASH_ADD(hh, s_texture_table, key, sizeof(uint64_t), entry);
     }
 
-    VK_CHECK(vkCreateSampler(s_device, &sampler_info, NULL, (VkSampler*)&entry->value.sampler));
+    VK_CHECK(vkCreateSampler(s_device,
+                             &sampler_info,
+                             NULL,
+                             (VkSampler*)&entry->value.sampler));
 
     return entry->key;
+}
+
+mgfx_th mgfx_texture_create_from_path(const char* path, VkFormat format) {
+    int width, height, channel_count;
+
+    stbi_uc* data = stbi_load(path, &width, &height, &channel_count, STBI_rgb_alpha);
+
+    MX_ASSERT(data, "Texture at %s failed to load", path);
+    MX_ASSERT(data != NULL, "[MGFX_EXAMPLES]: Failed to load texture!");
+
+    size_t size = width * height * 4;
+    MX_LOG_SUCCESS("Texture loaded: %s (%.2f mb)!", path, (float)size / MX_MB);
+
+    mgfx_image_info info = {
+        .format = format,
+
+        .width = width,
+        .height = height,
+        .layers = 1,
+
+        .cube_map = MX_FALSE,
+    };
+
+    mgfx_th th = mgfx_texture_create_from_memory(&info, VK_FILTER_LINEAR, data, size);
+
+    stbi_image_free(data);
+    return th;
 }
 
 void mgfx_texture_destroy(mgfx_th th, mx_bool release_image) {
@@ -2085,7 +2379,11 @@ void mgfx_set_texture(mgfx_dh dh, mgfx_th th) {
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Expected layout
 
     image_entry* image_entry;
-    HASH_FIND(hh, s_image_table, &texture_entry->value.imgh, sizeof(mgfx_imgh), image_entry);
+    HASH_FIND(hh,
+              s_image_table,
+              &texture_entry->value.imgh,
+              sizeof(mgfx_imgh),
+              image_entry);
     MX_ASSERT(image_entry != NULL, "Image invalid handle!");
     entry->value.image = &image_entry->value;
 }
@@ -2096,14 +2394,19 @@ mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
                                  uint32_t color_attachment_count,
                                  mgfx_imgh depth_attachment) {
     // TODO: Framebuffer should be an api agonstic concept.
-    framebuffer_entry* entry = mx_alloc(mx_default_allocator(), sizeof(framebuffer_entry));
+    framebuffer_entry* entry =
+        mx_alloc(mx_default_allocator(), sizeof(framebuffer_entry));
     memset(entry, 0, sizeof(framebuffer_entry));
 
     framebuffer_vk* fb = &entry->value;
     fb->color_attachment_count = color_attachment_count;
     for (uint32_t i = 0; i < color_attachment_count; i++) {
         image_entry* color_entry;
-        HASH_FIND(hh, s_image_table, &color_attachments[i], sizeof(mgfx_imgh), color_entry);
+        HASH_FIND(hh,
+                  s_image_table,
+                  &color_attachments[i],
+                  sizeof(mgfx_imgh),
+                  color_entry);
 
         fb->color_attachments[i] = &color_entry->value;
         image_create_view(fb->color_attachments[i],
@@ -2145,16 +2448,12 @@ void mgfx_framebuffer_destroy(mgfx_fbh fbh) {
 
 void mgfx_bind_vertex_buffer(mgfx_vbh vbh) {
     mgfx_draw* current_draw = &s_draws[s_draw_count];
-    current_draw->vbhs[current_draw->vbh_count] = vbh;
-
-    ++current_draw->vbh_count;
+    current_draw->vbh = vbh;
 }
 
-void mgfx_bind_transient_vertex_buffer(mgfx_transient_buffer tb) {
+void mgfx_bind_transient_vertex_buffer(mgfx_transient_vb tvb) {
     mgfx_draw* current_draw = &s_draws[s_draw_count];
-    current_draw->tvbs[current_draw->tvbh_count] = tb;
-
-    ++current_draw->tvbh_count;
+    current_draw->tvb = tvb;
 }
 
 void mgfx_bind_index_buffer(mgfx_ibh ibh) {
@@ -2180,15 +2479,17 @@ void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh) {
 }
 
 void mgfx_set_view_clear(uint8_t target, float* color_4) {
-    MX_ASSERT(
-        target <= 0xFF,
-        "Attemping to set clear color for unknown target. Please call mgfx_set_view_target first");
+    MX_ASSERT(target <= 0xFF,
+              "Attemping to set clear color for unknown target. Please call "
+              "mgfx_set_view_target first");
     memcpy(s_view_clears[target].float32, color_4, sizeof(float) * 4);
 }
 
 void mgfx_set_view_target(uint8_t target, mgfx_fbh fb) { s_view_targets[target] = fb; }
 
-void mgfx_set_transform(const float* mtx) { memcpy(s_current_transform, mtx, sizeof(float) * 16); }
+void mgfx_set_transform(const float* mtx) {
+    memcpy(s_current_transform, mtx, sizeof(float) * 16);
+}
 
 void mgfx_set_view(const float* mtx) { memcpy(s_current_view, mtx, sizeof(float) * 16); }
 
@@ -2197,6 +2498,7 @@ void mgfx_set_proj(const float* mtx) { memcpy(s_current_proj, mtx, sizeof(float)
 void mgfx_submit(uint8_t target, mgfx_ph ph) {
     MX_ASSERT(s_draw_count < MGFX_MAX_DRAW_COUNT,
               "Reached max draws! Consider instancing or batching!");
+    mgfx_draw* cdraw = &s_draws[s_draw_count];
 
     program_entry* entry;
     HASH_FIND(hh, s_program_table, &ph, sizeof(ph), entry);
@@ -2221,11 +2523,35 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
                   fs_entry);
         const shader_vk* fs = fs_entry ? &fs_entry->value : NULL;
 
+        const mgfx_vertex_layout* vl = NULL;
+
+        if (cdraw->vbh.idx) {
+            vb_info* vertex_info =
+                vb_info_find(&vb_infos, (mgfx_vbh){.idx = cdraw->vbh.idx});
+
+            if (vertex_info) {
+                vl = &vertex_info->vl;
+            }
+        }
+
+        if (cdraw->tvb.tb.buffer_handle) {
+            if (vl) {
+                MX_LOG_WARN("Draw call has both vertex and transient vertex buffer!");
+                return;
+            }
+
+            vl = cdraw->tvb.vl;
+        }
+
         if (target == MGFX_DEFAULT_VIEW_TARGET) {
-            pipeline_create_graphics(vs, fs, &s_swapchain.framebuffer, program);
+            pipeline_create_graphics(vs, fs, &s_swapchain.framebuffer, vl, program);
         } else {
             framebuffer_entry* fb_entry;
-            HASH_FIND(hh, s_framebuffer_table, &s_view_targets[target], sizeof(mgfx_fbh), fb_entry);
+            HASH_FIND(hh,
+                      s_framebuffer_table,
+                      &s_view_targets[target],
+                      sizeof(mgfx_fbh),
+                      fb_entry);
 
             if (!fb_entry) {
                 MX_LOG_ERROR("Submitting to unknown view target '%d'! Please call "
@@ -2233,21 +2559,23 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
                              target);
             }
 
-            pipeline_create_graphics(vs, fs, &fb_entry->value, program);
+            pipeline_create_graphics(vs, fs, &fb_entry->value, vl, program);
         }
     }
 
-    mgfx_draw* current_draw = &s_draws[s_draw_count];
-    current_draw->view_target = target;
-    current_draw->ph = ph;
+    cdraw->view_target = target;
+    cdraw->ph = ph;
 
-    memcpy(current_draw->draw_pc.model, s_current_transform, sizeof(float) * 16);
-    memcpy(current_draw->draw_pc.view, s_current_view, sizeof(float) * 16);
-    memcpy(current_draw->draw_pc.proj, s_current_proj, sizeof(float) * 16);
+    memcpy(cdraw->pc.model.val, s_current_transform, sizeof(float) * 16);
+    memcpy(cdraw->pc.view.val, s_current_view, sizeof(float) * 16);
+    memcpy(cdraw->pc.proj, s_current_proj, sizeof(float) * 16);
+
+    cdraw->pc.model_inv = mx_mat4_inverse(cdraw->pc.model);
+    cdraw->pc.view_inv = mx_mat4_inverse(cdraw->pc.view);
 
     // TODO: Make ph.idx a uint16_t
-    current_draw->sort_key = ((uint64_t)(target) << 56) |         // highest priority (view)
-                             ((uint64_t)(ph.idx & 0xFFFF) << 40); // then shader program
+    cdraw->sort_key = ((uint64_t)(target) << 56) |         // highest priority (view)
+                      ((uint64_t)(ph.idx & 0xFFFF) << 40); // then shader program
     /*| ((uint64_t)(descriptors_hash) << 8);*/
     ++s_draw_count;
 }
@@ -2279,10 +2607,11 @@ void mgfx_frame() {
 
     // Buffer to buffer copy queue
     if (s_buffer_to_buffer_copy_count > 0) {
-        VkMemoryBarrier vb_cpy_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
+        VkMemoryBarrier vb_cpy_barriers[MAX_FRAME_BUFFER_COPIES];
         uint32_t vb_cpy_barrier_count = 0;
 
-        for (uint32_t copy_idx = 0; copy_idx < s_buffer_to_buffer_copy_count; copy_idx++) {
+        for (uint32_t copy_idx = 0; copy_idx < s_buffer_to_buffer_copy_count;
+             copy_idx++) {
             const buffer_vk* src = s_buffer_to_buffer_copy_queue[copy_idx].src;
             buffer_vk* dst = s_buffer_to_buffer_copy_queue[copy_idx].dst;
             VkBufferCopy* cpy = &s_buffer_to_buffer_copy_queue[copy_idx].copy;
@@ -2291,11 +2620,11 @@ void mgfx_frame() {
 
             if ((dst->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) ==
                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) {
-                vb_cpy_barriers[vb_cpy_barrier_count++] =
-                    (VkMemoryBarrier){.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                                      .pNext = NULL,
-                                      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                                      .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
+                vb_cpy_barriers[vb_cpy_barrier_count++] = (VkMemoryBarrier){
+                    .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                    .pNext = NULL,
+                    .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                    .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT};
             } else if ((dst->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ==
                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT) {
                 vb_cpy_barriers[vb_cpy_barrier_count++] =
@@ -2323,10 +2652,10 @@ void mgfx_frame() {
 
     // Buffer to image copy queue
     if (s_buffer_to_image_copy_count > 0) {
-        VkImageMemoryBarrier sampled_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
+        VkImageMemoryBarrier sampled_barriers[MAX_FRAME_BUFFER_COPIES];
         uint32_t sampled_copy_count = 0;
 
-        VkImageMemoryBarrier pre_copy_barriers[MGFX_MAX_FRAME_BUFFER_COPIES];
+        VkImageMemoryBarrier pre_copy_barriers[MAX_FRAME_BUFFER_COPIES];
         uint32_t pre_copy_count = 0;
 
         for (uint32_t i = 0; i < s_buffer_to_image_copy_count; i++) {
@@ -2342,17 +2671,18 @@ void mgfx_frame() {
                 .image = s_buffer_to_image_copy_queue[i].dst->handle,
                 .subresourceRange =
                     {
-                        .aspectMask =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.aspectMask,
+                        .aspectMask = s_buffer_to_image_copy_queue[i]
+                                          .copy.imageSubresource.aspectMask,
                         .baseMipLevel = 0,
                         .levelCount = 1,
-                        .baseArrayLayer =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.baseArrayLayer,
-                        .layerCount =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.layerCount,
+                        .baseArrayLayer = s_buffer_to_image_copy_queue[i]
+                                              .copy.imageSubresource.baseArrayLayer,
+                        .layerCount = s_buffer_to_image_copy_queue[i]
+                                          .copy.imageSubresource.layerCount,
                     },
             };
-            s_buffer_to_image_copy_queue[i].dst->layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            s_buffer_to_image_copy_queue[i].dst->layout =
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
             // TODO: Check if sampled.
             sampled_barriers[sampled_copy_count++] = (VkImageMemoryBarrier){
@@ -2367,18 +2697,19 @@ void mgfx_frame() {
                 .image = s_buffer_to_image_copy_queue[i].dst->handle,
                 .subresourceRange =
                     {
-                        .aspectMask =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.aspectMask,
+                        .aspectMask = s_buffer_to_image_copy_queue[i]
+                                          .copy.imageSubresource.aspectMask,
                         .baseMipLevel = 0,
                         .levelCount = 1,
-                        .baseArrayLayer =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.baseArrayLayer,
-                        .layerCount =
-                            s_buffer_to_image_copy_queue[i].copy.imageSubresource.layerCount,
+                        .baseArrayLayer = s_buffer_to_image_copy_queue[i]
+                                              .copy.imageSubresource.baseArrayLayer,
+                        .layerCount = s_buffer_to_image_copy_queue[i]
+                                          .copy.imageSubresource.layerCount,
                     },
             };
 
-            s_buffer_to_image_copy_queue[i].dst->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            s_buffer_to_image_copy_queue[i].dst->layout =
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
 
         // Fragment Sampled image memory barriers
@@ -2417,11 +2748,13 @@ void mgfx_frame() {
         s_buffer_to_image_copy_count = 0;
     }
 
-    // Clear transient buffers
-    for (uint32_t tsb_idx = 0; tsb_idx < s_tsbs_count; tsb_idx++) {
-        s_tsb_pool.tail = (s_tsb_pool.tail + s_tsbs[tsb_idx].size) % s_tsb_pool.size;
+    // Clear transient staging buffers
+    for (uint32_t tsb_idx = 0; tsb_idx < s_transient_staging_buffer_count; tsb_idx++) {
+        s_transient_staging_buffer_pool.tail =
+            (s_transient_staging_buffer_pool.tail + s_tsbs[tsb_idx].actual_size) %
+            s_transient_staging_buffer_pool.size;
     }
-    s_tsbs_count = 0;
+    s_transient_staging_buffer_count = 0;
 
     vk_cmd_transition_image(frame->cmd,
                             &s_swapchain.images[s_swapchain.free_idx],
@@ -2439,13 +2772,13 @@ void mgfx_frame() {
     VkDescriptorSet flat_ds[MGFX_SHADER_MAX_DESCRIPTOR_SET];
     uint32_t flat_ds_count = 0;
 
-    mgfx_program* cur_program = NULL;
+    mgfx_program* last_program = NULL;
 
-    VkBuffer cur_vbs[MGFX_SHADER_MAX_VERTEX_BINDING];
-    uint32_t cur_vert_count = 0;
+    VkBuffer last_vb = VK_NULL_HANDLE;
+    VkDeviceSize last_offset = 0;
 
-    VkBuffer cur_ib = VK_NULL_HANDLE;
-    uint32_t cur_idx_count = 0;
+    VkBuffer last_ib = VK_NULL_HANDLE;
+    uint32_t last_idx_count = 0;
 
     for (uint32_t draw_idx = 0; draw_idx < s_draw_count; draw_idx++) {
         const mgfx_draw* draw = &s_draws[draw_idx];
@@ -2470,17 +2803,23 @@ void mgfx_frame() {
                     break;
                 }
 
-                for (uint32_t ds_idx = 0; ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET; ds_idx++) {
+                for (uint32_t ds_idx = 0; ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET;
+                     ds_idx++) {
                     if (target_draw->desc_sets[ds_idx].dh_count <= 0) {
                         continue;
                     }
 
-                    for (uint32_t bind_idx = 0; bind_idx < target_draw->desc_sets[ds_idx].dh_count;
+                    for (uint32_t bind_idx = 0;
+                         bind_idx < target_draw->desc_sets[ds_idx].dh_count;
                          bind_idx++) {
                         mgfx_dh dh = target_draw->desc_sets[ds_idx].dhs[bind_idx];
                         const descriptor_entry* descriptor_entry;
 
-                        HASH_FIND(hh, s_descriptor_table, &dh, sizeof(mgfx_dh), descriptor_entry);
+                        HASH_FIND(hh,
+                                  s_descriptor_table,
+                                  &dh,
+                                  sizeof(mgfx_dh),
+                                  descriptor_entry);
                         MX_ASSERT(descriptor_entry != NULL, "Descriptor invalid handle!");
 
                         switch (descriptor_entry->value.type) {
@@ -2505,6 +2844,8 @@ void mgfx_frame() {
                                 }
                             }
                             break;
+
+                        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
                         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
                             break;
 
@@ -2521,8 +2862,11 @@ void mgfx_frame() {
                 fb = &s_swapchain.framebuffer;
             } else {
                 framebuffer_entry* fb_entry;
-                HASH_FIND(
-                    hh, s_framebuffer_table, &s_view_targets[target], sizeof(mgfx_fbh), fb_entry);
+                HASH_FIND(hh,
+                          s_framebuffer_table,
+                          &s_view_targets[target],
+                          sizeof(mgfx_fbh),
+                          fb_entry);
                 fb = &fb_entry->value;
             }
 
@@ -2552,16 +2896,19 @@ void mgfx_frame() {
             vk_cmd_begin_rendering(frame->cmd, fb);
             /*MX_LOG_INFO("TARGET : %u", target);*/
             /*for (uint32_t i = 0; i < fb->color_attachment_count; i++) {*/
-            /*    MX_LOG_INFO("color_attachment: %lu", (uint64_t)fb->color_attachment_views[i]);*/
+            /*    MX_LOG_INFO("color_attachment: %lu",
+             * (uint64_t)fb->color_attachment_views[i]);*/
             /*}*/
-            /*MX_LOG_INFO("depth_attachment: %lu", (uint64_t)fb->depth_attachment_view);*/
+            /*MX_LOG_INFO("depth_attachment: %lu",
+             * (uint64_t)fb->depth_attachment_view);*/
         }
 
         // Check program in view target.
-        if (cur_program != &program_entry->value) {
-            cur_program = &program_entry->value;
-            vkCmdBindPipeline(
-                frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipeline)cur_program->pipeline);
+        if (last_program != &program_entry->value) {
+            last_program = &program_entry->value;
+            vkCmdBindPipeline(frame->cmd,
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              (VkPipeline)last_program->pipeline);
         }
 
         flat_ds_count = 0;
@@ -2588,17 +2935,19 @@ void mgfx_frame() {
                 .pNext = NULL,
                 .descriptorPool = s_ds_pool,
                 .descriptorSetCount = 1,
-                .pSetLayouts = (VkDescriptorSetLayout*)&cur_program->dsls[ds_idx],
+                .pSetLayouts = (VkDescriptorSetLayout*)&last_program->dsls[ds_idx],
             };
 
-            ds_entry = mx_alloc(mx_default_allocator(), sizeof(descriptor_set_entry));
+            ds_entry = mx_alloc(MX_DEFAULT_ALLOCATOR, sizeof(descriptor_set_entry));
             memset(ds_entry, 0, sizeof(descriptor_set_entry));
 
             ds_entry->key = ds_hash;
             HASH_ADD_INT(s_descriptor_set_table, key, ds_entry);
 
-            VK_CHECK(
-                vkAllocateDescriptorSets(s_device, &descriptor_set_alloc_info, &ds_entry->value));
+            VK_CHECK(vkAllocateDescriptorSets(s_device,
+                                              &descriptor_set_alloc_info,
+                                              &ds_entry->value));
+
             flat_ds[flat_ds_count++] = ds_entry->value;
 
             for (uint32_t binding_idx = 0; binding_idx < draw->desc_sets[ds_idx].dh_count;
@@ -2662,7 +3011,7 @@ void mgfx_frame() {
         if (flat_ds_count > 0) {
             vkCmdBindDescriptorSets(frame->cmd,
                                     VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    (VkPipelineLayout)cur_program->pipeline_layout,
+                                    (VkPipelineLayout)last_program->pipeline_layout,
                                     0,
                                     flat_ds_count,
                                     flat_ds,
@@ -2670,72 +3019,81 @@ void mgfx_frame() {
                                     NULL);
         }
 
-        // TODO: More robust equality check
-        if (draw->vbh_count > 0 && cur_vbs[0] != (VkBuffer)draw->vbhs[0].idx) {
-            VkDeviceSize offsets = 0;
+        VkBuffer vb = VK_NULL_HANDLE;
+        VkDeviceSize offset = 0;
 
-            MX_ASSERT(draw->vbh_count < MGFX_SHADER_MAX_VERTEX_BINDING);
-            memcpy(cur_vbs, draw->vbhs, draw->vbh_count);
-
-            vkCmdBindVertexBuffers(frame->cmd, 0, draw->vbh_count, (VkBuffer*)draw->vbhs, &offsets);
+        if ((VkBuffer)draw->vbh.idx) {
+            vb = (VkBuffer)draw->vbh.idx;
+            offset = 0;
         }
 
-        if (draw->tvbh_count > 0) {
-            MX_ASSERT(draw->tvbh_count < MGFX_SHADER_MAX_VERTEX_BINDING);
-            VkDeviceSize offsets[MGFX_SHADER_MAX_VERTEX_BINDING] = {0};
-
-            for (uint32_t tvb_idx = 0; tvb_idx < draw->tvbh_count; ++tvb_idx) {
-                cur_vbs[tvb_idx] = (VkBuffer)draw->tvbs[tvb_idx].buffer_handle;
-
-                offsets[tvb_idx] = draw->tvbs[tvb_idx].offset;
-                s_tvb_pool.tail =
-                    (uint32_t)((s_tvb_pool.tail + draw->tvbs[tvb_idx].size) % s_tvb_pool.size);
-            }
-
-            vkCmdBindVertexBuffers(frame->cmd, 0, draw->tvbh_count, cur_vbs, offsets);
+        if ((VkBuffer)draw->tvb.tb.buffer_handle) {
+            vb = (VkBuffer)draw->tvb.tb.buffer_handle;
+            offset = draw->tvb.tb.offset;
+            transient_vertex_buffer_free(&draw->tvb.tb);
         }
 
-        if ((VkBuffer)draw->ibh.idx != VK_NULL_HANDLE && (VkBuffer)draw->ibh.idx != cur_ib) {
+        if (vb != last_vb || last_offset != offset) {
+            last_vb = vb;
+            last_offset = offset;
+
+            vkCmdBindVertexBuffers(frame->cmd, 0, 1, &vb, &offset);
+        }
+
+        if ((VkBuffer)draw->ibh.idx != VK_NULL_HANDLE &&
+            (VkBuffer)draw->ibh.idx != last_ib) {
             VkDeviceSize offset = 0;
 
             const buffer_entry* index_buffer_entry;
-            HASH_FIND(hh, s_buffer_table, &draw->ibh, sizeof(mgfx_ibh), index_buffer_entry);
+            HASH_FIND(hh,
+                      s_buffer_table,
+                      &draw->ibh,
+                      sizeof(mgfx_ibh),
+                      index_buffer_entry);
 
             if (index_buffer_entry) {
                 VmaAllocationInfo index_buffer_alloc_info = {0};
-                vmaGetAllocationInfo(
-                    s_allocator, index_buffer_entry->value.allocation, &index_buffer_alloc_info);
-                cur_idx_count = (uint32_t)index_buffer_alloc_info.size / sizeof(uint32_t);
+                vmaGetAllocationInfo(s_allocator,
+                                     index_buffer_entry->value.allocation,
+                                     &index_buffer_alloc_info);
+                last_idx_count =
+                    (uint32_t)index_buffer_alloc_info.size / sizeof(uint32_t);
             } else {
                 MX_LOG_WARN("Index buffer invalid handle!");
             }
 
-            cur_ib = (VkBuffer)draw->ibh.idx;
-            vkCmdBindIndexBuffer(frame->cmd, cur_ib, 0, VK_INDEX_TYPE_UINT32);
+            last_ib = (VkBuffer)draw->ibh.idx;
+            vkCmdBindIndexBuffer(frame->cmd, last_ib, 0, VK_INDEX_TYPE_UINT32);
         }
 
         if ((VkBuffer)draw->tib.buffer_handle != VK_NULL_HANDLE) {
-            if ((VkBuffer)draw->tib.buffer_handle != cur_ib) {
-                cur_ib = (VkBuffer)draw->tib.buffer_handle;
+            if ((VkBuffer)draw->tib.buffer_handle != last_ib) {
+                last_ib = (VkBuffer)draw->tib.buffer_handle;
             };
 
-            vkCmdBindIndexBuffer(frame->cmd, cur_ib, draw->tib.offset, VK_INDEX_TYPE_UINT32);
-            cur_idx_count = draw->tib.size / sizeof(uint32_t);
-            s_tib_pool.tail = (s_tib_pool.tail + draw->tib.size) % s_tib_pool.size;
+            vkCmdBindIndexBuffer(frame->cmd,
+                                 last_ib,
+                                 draw->tib.offset,
+                                 VK_INDEX_TYPE_UINT32);
+            last_idx_count = draw->tib.requested_size / sizeof(uint32_t);
+
+            transient_index_buffer_free(&draw->tib);
         }
 
-        vkCmdPushConstants(frame->cmd,
-                           (VkPipelineLayout)cur_program->pipeline_layout,
-                           VK_SHADER_STAGE_VERTEX_BIT,
-                           0,
-                           sizeof(draw->draw_pc),
-                           &draw->draw_pc);
+        if (last_program->has_mgfx_pc) {
+            vkCmdPushConstants(frame->cmd,
+                               (VkPipelineLayout)last_program->pipeline_layout,
+                               VK_SHADER_STAGE_VERTEX_BIT,
+                               0,
+                               sizeof(draw->pc),
+                               &draw->pc);
+        }
 
-        if (cur_ib) {
-            vkCmdDrawIndexed(frame->cmd, cur_idx_count, 1, 0, 0, 0);
+        if (last_ib) {
+            vkCmdDrawIndexed(frame->cmd, last_idx_count, 1, 0, 0, 0);
         } else {
             MX_ASSERT(MX_FALSE, "Unsupported draw method!");
-            vkCmdDraw(frame->cmd, cur_vert_count, 1, 0, 0);
+            vkCmdDraw(frame->cmd, last_idx_count, 1, 0, 0);
         }
     }
 
@@ -2766,7 +3124,8 @@ void mgfx_frame() {
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = &frame->render_semaphore,
     };
-    VK_CHECK(vkQueueSubmit(s_queues[MGFX_QUEUE_GRAPHICS], 1, &submit_info, frame->render_fence));
+    VK_CHECK(
+        vkQueueSubmit(s_queues[VK_QUEUE_GRAPHICS], 1, &submit_info, frame->render_fence));
 
     VkPresentInfoKHR present_info = {
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -2779,7 +3138,8 @@ void mgfx_frame() {
         .pResults = NULL,
     };
 
-    VkResult present_result = vkQueuePresentKHR(s_queues[MGFX_QUEUE_GRAPHICS], &present_info);
+    VkResult present_result =
+        vkQueuePresentKHR(s_queues[VK_QUEUE_GRAPHICS], &present_info);
     switch (present_result) {
     case (VK_SUBOPTIMAL_KHR):
         break;
@@ -2813,9 +3173,7 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     typedef struct glyph_vertex {
         float position[3];
         float uv_x;
-        float normal[3];
         float uv_y;
-        float color[4];
     } glyph_vertex;
 
     glyph_vertex vertices[MGFX_DEBUG_MAX_TEXT * 4];
@@ -2905,8 +3263,15 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
     mx_mat4 model = mx_translate((mx_vec3){(float)x, (float)y, -1.0});
     mgfx_set_transform(model.val);
 
-    mgfx_transient_buffer tvb = {0};
-    mgfx_transient_vertex_buffer_allocate(vertices, vertex_count * sizeof(glyph_vertex), &tvb);
+    mgfx_vertex_layout glyph_vl;
+    mgfx_vertex_layout_begin(&glyph_vl);
+    mgfx_vertex_layout_add(&glyph_vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(mx_vec3));
+    mgfx_vertex_layout_add(&glyph_vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD0, sizeof(mx_vec2));
+    mgfx_vertex_layout_end(&glyph_vl);
+    mgfx_transient_vb tvb = {.vl = &glyph_vl};
+    mgfx_transient_vertex_buffer_allocate(vertices,
+                                          vertex_count * sizeof(glyph_vertex),
+                                          &tvb);
 
     mgfx_transient_buffer tib = {0};
     mgfx_transient_index_buffer_allocate(indices, index_count * sizeof(uint32_t), &tib);
@@ -2938,9 +3303,9 @@ void mgfx_shutdown() {
     // Destroy vulkan renderer
     VK_CHECK(vkDeviceWaitIdle(s_device));
 
-    buffer_destroy(&s_tsb_pool.buffer);
-    buffer_destroy(&s_tvb_pool.buffer);
-    buffer_destroy(&s_tib_pool.buffer);
+    buffer_destroy(&s_transient_staging_buffer_pool.buffer);
+    buffer_destroy(&s_transient_vertex_buffer_pool.buffer);
+    buffer_destroy(&s_transient_index_buffer_pool.buffer);
 
     vkDestroyDescriptorPool(s_device, s_ds_pool, NULL);
 

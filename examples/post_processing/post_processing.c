@@ -1,3 +1,5 @@
+#include "mgfx/defines.h"
+#include "mgfx/mgfx.h"
 #include <ex_common.h>
 #include <gltf_loading/gltf_loader.h>
 
@@ -12,6 +14,7 @@
 #include <mx/mx_math.h>
 #include <mx/mx_math_mtx.h>
 
+#include <stdlib.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
 
@@ -27,7 +30,7 @@ typedef struct directional_light {
         float light_space_matrix[16];
         mx_vec3 direction;
         float distance;
-        mx_vec4 color;
+        mx_vec4 intensity;
     } data;
 
     camera camera;
@@ -36,16 +39,13 @@ typedef struct directional_light {
 typedef struct point_light {
     float position[4];
 
-    float color[3];
-    float intensity;
+    mx_vec4 intensity;
 } point_light;
 
 enum { SCENE_MAX_POINT_LIGHTS = 32 };
 typedef struct scene_data {
+    mx_vec3 camera_position;
     uint32_t point_light_count;
-    uint32_t dir_light_count;
-    uint32_t post_processing;
-    uint32_t _padding;
 } scene_data;
 
 scene_data scene = {0};
@@ -54,13 +54,13 @@ mgfx_dh u_scene_data;
 
 directional_light sun_light = {.data = {.direction = {3.0f, -8.0f, 3.0f},
                                         .distance = 1.0f,
-                                        .color = {100, 100, 100, 100.0f},
+                                        .intensity = {1, 1, 1, 1.0f},
                                         .light_space_matrix = {0.0f}}};
 mgfx_ubh sun_light_buffer;
 mgfx_dh u_sun_light;
 
 point_light point_lights[SCENE_MAX_POINT_LIGHTS] = {0};
-mgfx_ubh point_lights_buffer;
+mgfx_sbh point_lights_buffer;
 mgfx_dh u_point_lights;
 
 mgfx_imgh shadow_pass_dattachmen;
@@ -127,25 +127,18 @@ void mgfx_example_init() {
     // Common
     camera_create(mgfx_camera_type_orthographic, &sun_light.camera);
 
-    camera_create(mgfx_camera_type_orthographic, &sun_light.camera);
-
-    sun_light.data.color.xyz = mx_vec3_norm(sun_light.data.color.xyz);
-
     sun_light_buffer = mgfx_uniform_buffer_create(&sun_light.data, sizeof(sun_light.data));
     u_sun_light = mgfx_descriptor_create("sun_light", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     mgfx_set_buffer(u_sun_light, sun_light_buffer);
 
-    scene.dir_light_count += 1;
-
     point_lights[0] = (point_light){
-        .color = {10.0f, 0.0f, 0.0f},
-        .intensity = 10.0f,
+        .intensity = {10.0f, 0.0f, 0.0f, 10.0f},
         .position = {0.0f, 1.5f, 0.0f},
     };
 
-    point_lights_buffer = mgfx_uniform_buffer_create(point_lights, sizeof(point_lights));
-    u_point_lights = mgfx_descriptor_create("point_lights", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-    mgfx_set_buffer(u_point_lights, point_lights_buffer);
+    point_lights_buffer = mgfx_storage_buffer_create(point_lights, sizeof(point_lights));
+    u_point_lights = mgfx_descriptor_create("point_lights", VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    mgfx_set_buffer(u_point_lights, (mgfx_ubh){.idx = point_lights_buffer.idx});
 
     scene.point_light_count = 1;
 
@@ -161,21 +154,23 @@ void mgfx_example_init() {
         .layers = 1,
     };
 
-    shadow_pass_dattachmen =
-        mgfx_image_create(&shadow_pass_depth_attachment_info,
-                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    shadow_pass_dattachmen = mgfx_image_create(
+        &shadow_pass_depth_attachment_info,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
     shadow_pass_fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_dattachmen);
     mgfx_set_view_target(SHADOW_FRAME_TARGET, shadow_pass_fbh);
 
-    shadow_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/shadows.vert.glsl.spv");
+    shadow_pass_vs = mgfx_shader_create("shadow.vert.spv");
 
     const mgfx_graphics_ex_create_info shadow_pass_create_info = {
-        .polygon_mode = VK_POLYGON_MODE_FILL,
-        .primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .cull_mode = VK_CULL_MODE_FRONT_BIT,
+        .name = {"shadow_pass"},
+        .polygon_mode = MGFX_FILL,
+        .primitive_topology = MGFX_TRIANGLE_LIST,
+        .cull_mode = MGFX_CULL_FRONT,
     };
-    shadow_pass_program = mgfx_program_create_graphics_ex(
-        shadow_pass_vs, (mgfx_sh){.idx = 0}, &shadow_pass_create_info);
+    shadow_pass_program = mgfx_program_create_graphics_ex(shadow_pass_vs,
+                                                          (mgfx_sh){.idx = 0},
+                                                          &shadow_pass_create_info);
 
     // HDR Mesh pass
     struct mgfx_image_info hdr_color_info = {
@@ -185,18 +180,18 @@ void mgfx_example_init() {
         .layers = 1,
     };
 
-    mesh_pass_color_attachment =
-        mgfx_image_create(&hdr_color_info,
-                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
-                              VK_IMAGE_USAGE_SAMPLED_BIT);
+    mesh_pass_color_attachment = mgfx_image_create(
+        &hdr_color_info,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT);
 
     // ----- Post Processing -----
-    mesh_pass_bright_attachment =
-        mgfx_image_create(&hdr_color_info,
-                          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
-                              VK_IMAGE_USAGE_SAMPLED_BIT);
+    mesh_pass_bright_attachment = mgfx_image_create(
+        &hdr_color_info,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT);
     mesh_pass_bright_attachment_th =
         mgfx_texture_create_from_image(mesh_pass_bright_attachment, VK_FILTER_LINEAR);
     // ----- Post Processing -----
@@ -209,33 +204,41 @@ void mgfx_example_init() {
     };
 
     mesh_pass_depth_attachment =
-        mgfx_image_create(&depth_attachment_info, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+        mgfx_image_create(&depth_attachment_info,
+                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
     mgfx_imgh mesh_pass_color_attachments[2] = {mesh_pass_color_attachment,
                                                 mesh_pass_bright_attachment};
 
-    mesh_pass_fbh =
-        mgfx_framebuffer_create(mesh_pass_color_attachments, 2, mesh_pass_depth_attachment);
+    mesh_pass_fbh = mgfx_framebuffer_create(mesh_pass_color_attachments,
+                                            2,
+                                            mesh_pass_depth_attachment);
     mgfx_set_view_target(MESH_FRAME_TARGET, mesh_pass_fbh);
     mgfx_set_view_clear(MESH_FRAME_TARGET, (float[4]){0.0f, 0.0f, 0.0f, 1.0f});
 
-    mesh_pass_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/post_processing_lit.vert.glsl.spv");
-    mesh_pass_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/post_processing_lit.frag.glsl.spv");
-    mesh_pass_program = mgfx_program_create_graphics(mesh_pass_vs, mesh_pass_fs);
+    mesh_pass_vs = mgfx_shader_create("lit.vert.spv");
+    mesh_pass_fs = mgfx_shader_create("lit.frag.spv");
+    mesh_pass_program = mgfx_program_create_graphics_ex(mesh_pass_vs,
+                                                        mesh_pass_fs,
+                                                        &(mgfx_graphics_ex_create_info){
+                                                            .name = "lit_mesh_pass",
+                                                            .cull_mode = MGFX_CULL_BACK,
+                                                        });
 
-    u_shadow_map = mgfx_descriptor_create("shadow_map", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    shadow_fba_texture = mgfx_texture_create_from_image(shadow_pass_dattachmen, VK_FILTER_LINEAR);
+    u_shadow_map =
+        mgfx_descriptor_create("shadow_map", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    shadow_fba_texture =
+        mgfx_texture_create_from_image(shadow_pass_dattachmen, VK_FILTER_LINEAR);
     mgfx_set_texture(u_shadow_map, shadow_fba_texture);
 
     mgfx_vertex_layout vl;
-
-    vertex_layout_begin(&vl);
-    vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
-    vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
-    vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD, sizeof(float) * 2);
-    vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
-    vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
-    vertex_layout_end(&vl);
+    mgfx_vertex_layout_begin(&vl);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD0, sizeof(float) * 2);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
+    mgfx_vertex_layout_end(&vl);
 
     helmet.vl = &vl;
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &helmet);
@@ -244,12 +247,19 @@ void mgfx_example_init() {
     LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza);
 
     // Blit pass
-    blit_vs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");
-    blit_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/post_processing_blit.frag.glsl.spv");
-    blit_program = mgfx_program_create_graphics(blit_vs, blit_fsh);
+    blit_vs = mgfx_shader_create("blit.vert.spv");
+    blit_fsh = mgfx_shader_create("blit.frag.spv");
+    blit_program = mgfx_program_create_graphics_ex(blit_vs,
+                                                   blit_fsh,
+                                                   &(mgfx_graphics_ex_create_info){
+                                                       .name = "blit_pass",
+                                                   });
 
-    quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES, sizeof(MGFX_FS_QUAD_VERTICES));
-    quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
+    quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
+                                         sizeof(MGFX_FS_QUAD_VERTICES),
+                                         &MGFX_PNTU32F_LAYOUT);
+    quad_ibh =
+        mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     u_mesh_pass_cattachment =
         mgfx_descriptor_create("diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -259,11 +269,11 @@ void mgfx_example_init() {
 
     // ----- Post Processing -----
     for (int i = 0; i < 2; i++) {
-        blur_pingpong_imgh[i] =
-            mgfx_image_create(&hdr_color_info,
-                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                  VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
-                                  VK_IMAGE_USAGE_SAMPLED_BIT);
+        blur_pingpong_imgh[i] = mgfx_image_create(
+            &hdr_color_info,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_SAMPLED_BIT);
 
         blur_pingpong_th[i] =
             mgfx_texture_create_from_image(blur_pingpong_imgh[i], VK_FILTER_LINEAR);
@@ -272,10 +282,12 @@ void mgfx_example_init() {
 
         if (i == 0) {
             u_blur_pingpong_dh[i] =
-                mgfx_descriptor_create("ping_pong_0", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+                mgfx_descriptor_create("ping_pong_0",
+                                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         } else {
             u_blur_pingpong_dh[i] =
-                mgfx_descriptor_create("ping_pong_1", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+                mgfx_descriptor_create("ping_pong_1",
+                                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
         }
 
         mgfx_set_texture(u_blur_pingpong_dh[i], blur_pingpong_th[i]);
@@ -286,8 +298,11 @@ void mgfx_example_init() {
         mgfx_set_view_target(BLUR_0_FRAME_TARGET + i, blur_pingpong_fbh[i % 2]);
     }
 
-    blur_pass_fs = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blur.frag.glsl.spv");
-    blur_pass_program = mgfx_program_create_graphics(blit_vs, blur_pass_fs);
+    blur_pass_fs = mgfx_shader_create("blur.frag.spv");
+    blur_pass_program = mgfx_program_create_graphics_ex(
+        blit_vs,
+        blur_pass_fs,
+        &(mgfx_graphics_ex_create_info){.name = "blur_pass"});
 
     blur_settings horiz = {
         .weights = {0.1945946, 0.1216216, 0.054054, 0.016216},
@@ -301,16 +316,20 @@ void mgfx_example_init() {
         .horizontal = MX_FALSE,
     };
 
-    horiz_blur_settings_buffer = mgfx_uniform_buffer_create(&horiz, sizeof(blur_settings));
+    horiz_blur_settings_buffer =
+        mgfx_uniform_buffer_create(&horiz, sizeof(blur_settings));
     vert_blur_settings_buffer = mgfx_uniform_buffer_create(&vert, sizeof(blur_settings));
 
-    u_horiz_blur_settings = mgfx_descriptor_create("horiz_blur", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    u_horiz_blur_settings =
+        mgfx_descriptor_create("horiz_blur", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     mgfx_set_buffer(u_horiz_blur_settings, horiz_blur_settings_buffer);
 
-    u_vert_blur_settings = mgfx_descriptor_create("vert_blur", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    u_vert_blur_settings =
+        mgfx_descriptor_create("vert_blur", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     mgfx_set_buffer(u_vert_blur_settings, vert_blur_settings_buffer);
 
-    u_brightness = mgfx_descriptor_create("brightness", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    u_brightness =
+        mgfx_descriptor_create("brightness", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     mgfx_set_texture(u_brightness, mesh_pass_bright_attachment_th);
     // ----- Post Processing -----
 }
@@ -342,15 +361,17 @@ void draw_scene(mgfx_scene* scene,
             if (!is_shadow_pass) {
                 mgfx_bind_descriptor(0, u_scene_data);
                 mgfx_bind_descriptor(0, u_sun_light);
-                mgfx_bind_descriptor(0, u_point_lights);
                 mgfx_bind_descriptor(0, u_shadow_map);
+                mgfx_bind_descriptor(0, u_point_lights);
 
-                mgfx_bind_descriptor(1, node_primitive->material->u_properties_buffer);
-                mgfx_bind_descriptor(1, node_primitive->material->u_albedo_texture);
-                mgfx_bind_descriptor(1, node_primitive->material->u_metallic_roughness_texture);
-                mgfx_bind_descriptor(1, node_primitive->material->u_normal_texture);
-                mgfx_bind_descriptor(1, node_primitive->material->u_occlusion_texture);
-                mgfx_bind_descriptor(1, node_primitive->material->u_emissive_texture);
+                mgfx_bind_descriptor(0, node_primitive->material->u_properties_buffer);
+                mgfx_bind_descriptor(0, node_primitive->material->u_albedo_texture);
+                mgfx_bind_descriptor(
+                    0,
+                    node_primitive->material->u_metallic_roughness_texture);
+                mgfx_bind_descriptor(0, node_primitive->material->u_normal_texture);
+                mgfx_bind_descriptor(0, node_primitive->material->u_occlusion_texture);
+                mgfx_bind_descriptor(0, node_primitive->material->u_emissive_texture);
             }
 
             mgfx_submit(target, ph);
@@ -371,6 +392,9 @@ void mgfx_example_update() {
     }
 
     // Transform the light direction
+    scene.camera_position = g_example_camera.position;
+    mgfx_buffer_update(scene_data_buffer.idx, &scene, sizeof(scene_data), 0);
+
     mx_mat4 rotation_matrix = mx_mat4_rotate_euler(angle, (mx_vec3){1, 0, 1});
 
     static mx_vec4 start_dir = {1.0f, -1.0f, 0.0f, 1.0f};
@@ -399,13 +423,23 @@ void mgfx_example_update() {
     sun_light.camera.forward = sun_light.data.direction;
     camera_update(&sun_light.camera);
 
-    memcpy(sun_light.data.light_space_matrix, sun_light.camera.view_proj.val, sizeof(float) * 16);
+    memcpy(sun_light.data.light_space_matrix,
+           sun_light.camera.view_proj.val,
+           sizeof(float) * 16);
 
     mgfx_set_proj(sun_light.camera.proj.val);
     mgfx_set_view(sun_light.camera.view.val);
 
-    draw_scene(&sponza, SHADOW_FRAME_TARGET, shadow_pass_program, sponza_transform, MX_TRUE);
-    draw_scene(&helmet, SHADOW_FRAME_TARGET, shadow_pass_program, helmet_transform, MX_TRUE);
+    draw_scene(&sponza,
+               SHADOW_FRAME_TARGET,
+               shadow_pass_program,
+               sponza_transform,
+               MX_TRUE);
+    draw_scene(&helmet,
+               SHADOW_FRAME_TARGET,
+               shadow_pass_program,
+               helmet_transform,
+               MX_TRUE);
 
     // Draw mesh pass
     mgfx_set_proj(g_example_camera.proj.val);

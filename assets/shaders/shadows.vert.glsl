@@ -10,6 +10,8 @@ layout(push_constant) uniform graphics_pc {
 	mat4 model;
 	mat4 view;
 	mat4 proj;
+
+	mat4 model_inv;
 	mat4 view_inv;
 };
 

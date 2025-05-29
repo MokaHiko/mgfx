@@ -14,7 +14,6 @@ typedef enum mgfx_material_flags {
     mgfx_material_flag_receive_shadows = 1 << 1,
 
     mgfx_material_flag_instanced = 1 << 2,
-
     mgfx_material_flag_max_enum = 0xFF,
 } mgfx_material_flags;
 
@@ -31,6 +30,7 @@ typedef struct mgfx_material {
         mx_vec3 emissive;
         float emissive_strength;
     } properties;
+
     mgfx_ubh properties_buffer;
     mgfx_dh u_properties_buffer;
 
@@ -67,6 +67,7 @@ typedef struct mgfx_mesh {
         const mgfx_material* material;
         const mgfx_vertex_layout* vl;
     } primitives[MGFX_MESH_MAX_PRIMITIVES];
+
     uint32_t primitive_count;
 } mgfx_mesh;
 
@@ -99,7 +100,6 @@ typedef struct mgfx_scene {
     uint32_t mesh_count;
 
     const mgfx_vertex_layout* vl;
-    /*mx_arena allocator;*/
 } mgfx_scene;
 
 typedef enum gltf_loader_flags {

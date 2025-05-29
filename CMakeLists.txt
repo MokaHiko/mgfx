@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(MGFX_BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries.")
-set(MGFX_BUILD_EXAMPLES OFF CACHE BOOL "Build examples.")
+set(MGFX_BUILD_EXAMPLES ON CACHE BOOL "Build examples.")
 
 find_package(Vulkan REQUIRED)
 add_subdirectory(third_party/vma)
@@ -37,6 +37,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     message("-- @warn mgfx uses glfw to get window surfaces on windows!")
     target_link_libraries(mgfx PRIVATE glfw)
+endif()
+
+find_program(SLANGC slangc HINTS ENV VULKAN_SDK PATH_SUFFIXES bin)
+if(NOT SLANGC)
+    message(FATAL_ERROR "slangc not found! Make sure the Vulkan SDK is properly installed and in your PATH.")
 endif()
 
 set(SHADERS
@@ -104,9 +109,36 @@ foreach(SHADER ${SHADERS})
     list(APPEND SPIRV_OUTPUTS ${SPIRV})
 endforeach()
 
+# Slang
+find_program(SLANGC slangc HINTS ENV VULKAN_SDK PATH_SUFFIXES bin)
+
+set(SPV_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets/shaders")
+set(MGFX_DEBUG_TEXT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/mgfxDebugText.slang")
+add_custom_command(
+    OUTPUT "${SPV_OUTPUT_DIR}/mgfxDebugText.vert.spv"
+    COMMAND ${SLANGC} ${MGFX_DEBUG_TEXT_SRC} -entry vertexMain -target spirv -profile spirv_1_4 -o "${SPV_OUTPUT_DIR}/mgfxDebugText.vert.spv"
+    DEPENDS "${MGFX_DEBUG_TEXT_SRC}"
+    COMMENT "Compiling vertex shader mgfxDebugText.vert.spv"
+    VERBATIM
+)
+
+add_custom_command(
+    OUTPUT "${SPV_OUTPUT_DIR}/mgfxDebugText.frag.spv"
+    COMMAND ${SLANGC} ${MGFX_DEBUG_TEXT_SRC} -entry fragmentMain -target spirv -profile spirv_1_4 -o "${SPV_OUTPUT_DIR}/mgfxDebugText.frag.spv"
+    DEPENDS "${mgfxDebugText_SHADER_SOURCE}"
+    COMMENT "Compiling fragex shader mgfxDebugText.frag.spv"
+    VERBATIM
+)
+
+add_custom_target(mgfx_compile_built_in_shaders ALL DEPENDS
+        "${SPV_OUTPUT_DIR}/mgfxDebugText.vert.spv"
+        "${SPV_OUTPUT_DIR}/mgfxDebugText.frag.spv"
+)
+
 # Built in assets
 target_compile_definitions(mgfx PUBLIC MGFX_ASSET_PATH="${CMAKE_CURRENT_BINARY_DIR}/assets/")
 add_custom_target(compile_built_in_shaders ALL DEPENDS ${SPIRV_OUTPUTS})
+
 
 # Copy fonts directory
 add_custom_command(

@@ -59,9 +59,7 @@ MX_API float mgfx_get_axis(mgfx_input_axis axis);
 void log_mat4(const mx_mat4 mat);
 
 extern void mgfx_example_init();
-
 extern void mgfx_example_update();
-
 extern void mgfx_example_shutdown();
 
 // TODO: Candidate functions

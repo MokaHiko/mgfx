@@ -1,4 +1,5 @@
 #include "ex_common.h"
+#include "mgfx/defines.h"
 
 #include <math.h>
 #include <mx/mx_log.h>
@@ -7,76 +8,119 @@
 
 typedef struct my_vertex {
     float position[3];
-    float uv_x;
     float normal[3];
-    float uv_y;
+    float uv[2];
     float color[4];
 } my_vertex;
 
 static my_vertex k_vertices[] = {
     // Front face
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {0.0f, 0.0f, 1.0f, 1.0f}},  // Top-right
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 0.0f, 1.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+    {{-0.5f, -0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {0.0f, 1.0f},
+     {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {1.0f, 1.0f},
+     {0.0f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Back face
     {{0.5f, -0.5f, -0.5f},
-     0.0f,
      {0.0f, 0.0f, -1.0f},
-     0.0f,
+     {0.0f, 0.0f},
      {1.0f, 0.0f, 1.0f, 1.0f}}, // Bottom-left
     {{-0.5f, -0.5f, -0.5f},
-     1.0f,
      {0.0f, 0.0f, -1.0f},
-     0.0f,
+     {0.0f, 1.0f},
      {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 0.0f, -1.0f}, 1.0f, {0.5f, 0.5f, 0.5f, 1.0f}},  // Top-left
+    {{-0.5f, 0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {1.0f, 1.0f},
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {1.0f, 0.0f},
+     {0.5f, 0.5f, 0.5f, 1.0f}}, // Top-left
 
     // Left face
     {{-0.5f, -0.5f, -0.5f},
-     0.0f,
      {-1.0f, 0.0f, 0.0f},
-     0.0f,
+     {0.0f, 0.0f},
      {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
     {{-0.5f, -0.5f, 0.5f},
-     1.0f,
      {-1.0f, 0.0f, 0.0f},
-     0.0f,
+     {0.0f, 1.0f},
      {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, 0.5f}, 1.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {0.0f, 0.5f, 1.0f, 1.0f}},  // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {-1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
+    {{-0.5f, 0.5f, 0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.0f, 0.5f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
 
     // Right face
-    {{0.5f, -0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, -0.5f},
-     1.0f,
+    {{0.5f, -0.5f, 0.5f},
      {1.0f, 0.0f, 0.0f},
-     0.0f,
-     {0.5f, 0.5f, 1.0f, 1.0f}},                                                      // Bottom right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, 0.5f}, 0.0f, {1.0f, 0.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 1.0f, 1.0f}},  // Top-left
+     {0.0f, 0.0f},
+     {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
+    {{0.5f, 0.5f, -0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, 0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-left
 
     // Top face
-    {{-0.5f, 0.5f, 0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, 0.5f, 0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 0.0f, {0.5f, 1.0f, 0.5f, 1.0f}},  // Bottom-right
-    {{0.5f, 0.5f, -0.5f}, 1.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{-0.5f, 0.5f, -0.5f}, 0.0f, {0.0f, 1.0f, 0.0f}, 1.0f, {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+    {{-0.5f, 0.5f, 0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, 0.5f, 0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 1.0f, 0.5f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, -0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
 
     // Bottom face
     {{-0.5f, -0.5f, -0.5f},
-     0.0f,
      {0.0f, -1.0f, 0.0f},
-     0.0f,
+     {0.0f, 0.0f},
      {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
     {{0.5f, -0.5f, -0.5f},
-     1.0f,
      {0.0f, -1.0f, 0.0f},
-     0.0f,
+     {0.0f, 1.0f},
      {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, -0.5f, 0.5f}, 1.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {1.0f, 0.0f, 0.5f, 1.0f}},  // Top-right
-    {{-0.5f, -0.5f, 0.5f}, 0.0f, {0.0f, -1.0f, 0.0f}, 1.0f, {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
+    {{0.5f, -0.5f, 0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {1.0f, 1.0f},
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Top-right
+    {{-0.5f, -0.5f, 0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {1.0f, 0.0f},
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
 };
 const size_t k_cube_vertex_count = sizeof(k_vertices) / sizeof(my_vertex);
 
@@ -102,12 +146,19 @@ mgfx_vbh vbh;
 mgfx_ibh ibh;
 
 void mgfx_example_init() {
-    cube_sh = mgfx_shader_create("/Users/christianmarkg.solon/dev/mx_app/mgfx/unlit.vert.spv");
-    fsh = mgfx_shader_create("/Users/christianmarkg.solon/dev/mx_app/mgfx/unlit.frag.spv");
+    cube_sh = mgfx_shader_create("cubes.vert.spv");
+    fsh = mgfx_shader_create("cubes.frag.spv");
 
     gfxph = mgfx_program_create_graphics(cube_sh, fsh);
 
-    vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices));
+    mgfx_vertex_layout vl = {0};
+    mgfx_vertex_layout_begin(&vl);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD0, sizeof(float) * 2);
+    mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
+    mgfx_vertex_layout_end(&vl);
+    vbh = mgfx_vertex_buffer_create(k_vertices, sizeof(k_vertices), &vl);
     ibh = mgfx_index_buffer_create(k_indices, sizeof(k_indices));
 }
 
@@ -115,7 +166,7 @@ void mgfx_example_update() {
     // Profiler
     static float last_value = 0.0f;
     float cur_value = MGFX_TIME_DELTA_TIME;
-    float epsilon = 0.005f;
+    float epsilon = 0.01f;
 
     if (fabsf(cur_value - last_value) > epsilon) {
         last_value = cur_value;
@@ -126,7 +177,8 @@ void mgfx_example_update() {
         mgfx_bind_vertex_buffer(vbh);
         mgfx_bind_index_buffer(ibh);
 
-        mx_mat4 rot = mx_mat4_rotate_euler(MGFX_TIME, (mx_vec3){MGFX_TIME, MGFX_TIME, MGFX_TIME});
+        mx_mat4 rot =
+            mx_mat4_rotate_euler(MGFX_TIME, (mx_vec3){MGFX_TIME, MGFX_TIME, MGFX_TIME});
         mx_mat4 translate = mx_translate((mx_vec3){x * 2.0f, 0.0f, 0.0f});
         mgfx_set_transform(mx_mat4_mul(translate, rot).val);
 
