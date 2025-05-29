@@ -63,11 +63,9 @@ FOut fragmentMain(VOut input) {
         lo += pointLights[i].illuminate(sg, brdf, wo);
     }
 
-    out.color = material.post_illuminate(sg, lo);
-    out.color += float4(material.emissive(sg), 1.0f);
-    if (length(out.color) <= 0.0001) {
-        out.color = float4(1.0f, 0.0f, 1.0f, 1.0f);
-    }
+    lo += material.ambient(sg);
+    lo += material.emissive(sg);
+    out.color = float4(lo, 1.0f);
 
     float brightness = dot(out.color.rgb, float3(0.2126, 0.7152, 0.0722)) * length(material.emissive(sg));
     if (brightness > 1.0) {

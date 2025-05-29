@@ -118,7 +118,7 @@ public interface IMaterial {
     public SurfaceGeometry prepare_geometry(SurfaceGeometry sg);
 
     public float3 emissive(SurfaceGeometry sg);
-    public float4 post_illuminate(SurfaceGeometry sg, float3 lo);
+    public float3 ambient(SurfaceGeometry sg);
 };
 
 public struct LitMaterial : IMaterial {
@@ -162,13 +162,10 @@ public struct LitMaterial : IMaterial {
                 emissive_factor * emissive_strength;
     }
 
-    public float4 post_illuminate(SurfaceGeometry sg, float3 lo) {
+    public float3 ambient(SurfaceGeometry sg) {
         // Ambient & AO lighting
         float ao = occlusion_map.Sample(sg.uv).r * ao_factor;
-        float3 ambient = mul(float3(0.0003), albedo.Sample(sg.uv).rgb) * ao;
-
-        float3 color = lo + ambient;
-        return float4(color, 1.0f);
+        return mul(float3(0.0003), albedo.Sample(sg.uv).rgb) * ao;
     }
 };
 
