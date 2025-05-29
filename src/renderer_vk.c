@@ -421,7 +421,7 @@ int choose_physical_device_vk(VkInstance instance,
         mx_alloc(allocator, sizeof(VkPhysicalDevice) * physical_device_count);
 
     vkEnumeratePhysicalDevices(instance, &physical_device_count, physical_devices);
-    VkPhysicalDeviceFeatures physical_device_features = {};
+    VkPhysicalDeviceFeatures physical_device_features = {0};
 
     MX_LOG_TRACE("Physical Device:");
     for (uint32_t i = 0; i < physical_device_count; i++) {
@@ -642,7 +642,7 @@ void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
                 .baseArrayLayer = 0,
                 .layerCount = 1,
             },
-        .srcOffsets = {{}, {src->extent.width, src->extent.height, 1.0f}},
+        .srcOffsets = {{0}, {src->extent.width, src->extent.height, 1.0f}},
         .dstSubresource =
             {
                 .aspectMask = aspect,
@@ -650,7 +650,7 @@ void vk_cmd_copy_image_to_image(VkCommandBuffer cmd,
                 .baseArrayLayer = 0,
                 .layerCount = 1,
             },
-        {{}, {dst->extent.width, dst->extent.height, 1.0f}},
+        {{0}, {dst->extent.width, dst->extent.height, 1.0f}},
     };
 
     vkCmdBlitImage(
@@ -689,7 +689,7 @@ void vk_cmd_begin_rendering(VkCommandBuffer cmd, framebuffer_vk* fb) {
                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
-    VkRenderingAttachmentInfo color_attachment_infos[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS] = {};
+    VkRenderingAttachmentInfo color_attachment_infos[MGFX_FRAMEBUFFER_MAX_COLOR_ATTACHMENTS] = {0};
 
     for (uint32_t i = 0; i < fb->color_attachment_count; i++) {
         color_attachment_infos[i] = (VkRenderingAttachmentInfo){
