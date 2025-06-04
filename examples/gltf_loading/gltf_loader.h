@@ -3,8 +3,8 @@
 
 #include <mgfx/mgfx.h>
 #include <mx/mx.h>
-#include <mx/mx_math_types.h>
 #include <mx/mx_math_mtx.h>
+#include <mx/mx_math_types.h>
 #include <mx/mx_memory.h>
 
 typedef enum mgfx_material_flags {
@@ -118,8 +118,9 @@ typedef enum gltf_loader_flags {
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene);
 void scene_destroy(mgfx_scene* scene);
 
-#define LOAD_GLTF_MODEL(model_name, gltf_flags, gltf_ptr)                                          \
-    load_scene_from_path(                                                                          \
-        GLTF_MODELS_PATH model_name "/glTF/" model_name ".gltf", gltf_flags, gltf_ptr)
+#define LOAD_GLTF_MODEL(model_name, gltf_flags, gltf_ptr)                                \
+    load_scene_from_path(GLTF_MODELS_PATH model_name "/glTF/" model_name ".gltf",        \
+                         gltf_flags,                                                     \
+                         gltf_ptr)
 
 #endif

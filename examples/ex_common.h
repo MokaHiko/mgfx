@@ -43,7 +43,7 @@ extern mgfx_th s_default_normal_map;
 extern double MGFX_TIME;
 extern double MGFX_TIME_DELTA_TIME;
 
-mgfx_th load_texture_2d_from_path(const char* path, VkFormat format);
+mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format);
 
 int mgfx_example_app();
 

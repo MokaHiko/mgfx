@@ -20,6 +20,7 @@ ConstantBuffer<MGFXBuiltIn> MGFX_BUILT_IN;
 struct VOut {
     float4 position : SV_Position;
     float3 normal;
+    float1 testing;
     float2 uv;
     float4 color;
 

@@ -13,6 +13,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <vulkan/vulkan_core.h>
+
 #ifdef MX_MACOS
 #include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan_metal.h>
@@ -23,8 +25,6 @@
 #include <vulkan/vulkan_win32.h>
 // clang-format on
 #endif
-
-#include <vulkan/vulkan_core.h>
 
 #include "renderer_vk.h"
 
@@ -754,9 +754,9 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     SpvReflectResult result = spvReflectCreateShaderModule(length, code, &module);
     MX_ASSERT(result == SPV_REFLECT_RESULT_SUCCESS);
 
-    MX_LOG_INFO("Entry Point: %s (Stage: %u)",
-                module.entry_points[0].name,
-                module.entry_points[0].shader_stage);
+    MX_LOG_TRACE("Entry Point: %s (Stage: %u)",
+                 module.entry_points[0].name,
+                 module.entry_points[0].shader_stage);
 
     if (module.shader_stage == SPV_REFLECT_SHADER_STAGE_VERTEX_BIT) {
         uint32_t input_count = 0;
@@ -916,7 +916,7 @@ void pipeline_create_graphics(const shader_vk* vs,
                               mgfx_program* program) {
     MX_ASSERT(vs != NULL, "Graphics program requires at least a valid vertex shader!");
 
-    const MGFX_SHADER_STAGE gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX,
+    const mgfx_shader_stage gfx_stages[] = {MGFX_SHADER_STAGE_VERTEX,
                                             MGFX_SHADER_STAGE_FRAGMENT};
     uint32_t shader_stage_count = fs != NULL ? 2 : 1;
 
@@ -1510,6 +1510,18 @@ mgfx_ibh dbg_quad_ibh;
 
 static mx_allocator_t mgfx_allocator;
 
+size_t mgfx_format_size(mgfx_format format) {
+    switch (format) {
+    case MGFX_FORMAT_D32_SFLOAT:
+        return 4;
+    case MGFX_FORMAT_R16G16B16A16_SFLOAT:
+        return 4 * 2;
+    default:
+        MX_LOG_ERROR("[MX] Uknown format  (%u)", format);
+        return 0;
+    }
+}
+
 int mgfx_init(const mgfx_init_info* info) {
     mx_scoped_allocator(MX_MB) tmp = mx_scoped_allocator_create();
 
@@ -1872,10 +1884,8 @@ int mgfx_init(const mgfx_init_info* info) {
     // Init debug text
     dbg_ui_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/mgfxDebugText.vert.spv");
     dbg_ui_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/mgfxDebugText.frag.spv");
-    dbg_ui_ph = mgfx_program_create_graphics_ex(
-        dbg_ui_vsh,
-        dbg_ui_fsh,
-        &(mgfx_graphics_ex_create_info){.name = "mgfx_debug_text"});
+    dbg_ui_ph =
+        mgfx_program_create_graphics(dbg_ui_vsh, dbg_ui_fsh, {.name = "mgfx_debug_text"});
 
     size_t font_file_size;
     if (mx_read_file(font_path, &font_file_size, NULL) != MX_SUCCESS) {
@@ -2074,9 +2084,9 @@ void mgfx_shader_destroy(mgfx_sh sh) {
     mx_free(mx_default_allocator(), entry);
 }
 
-mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
-                                        mgfx_sh fsh,
-                                        const mgfx_graphics_ex_create_info* ex_info) {
+mgfx_ph mgfx_program_create_graphics_impl(mgfx_sh vsh,
+                                          mgfx_sh fsh,
+                                          const mgfx_graphics_create_info* ex_info) {
     program_entry* entry = mx_alloc(mx_default_allocator(), sizeof(program_entry));
     memset(entry, 0, sizeof(program_entry));
     entry->key.idx = (uint64_t)entry;
@@ -2111,16 +2121,6 @@ mgfx_ph mgfx_program_create_graphics_ex(mgfx_sh vsh,
     HASH_ADD(hh, s_program_table, key, sizeof(entry->key), entry);
 
     return entry->key;
-}
-
-mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh) {
-    const mgfx_graphics_ex_create_info gfx_create_info = {
-        .polygon_mode = MGFX_FILL,
-        .primitive_topology = MGFX_TRIANGLE_LIST,
-        .cull_mode = MGFX_CULL_BACK,
-    };
-
-    return mgfx_program_create_graphics_ex(vsh, fsh, &gfx_create_info);
 }
 
 mgfx_ph mgfx_program_create_compute(mgfx_sh csh) {
@@ -2176,7 +2176,7 @@ void mgfx_image_destroy(mgfx_imgh imgh) {
 
 mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
                                         uint32_t filter,
-                                        void* data,
+                                        const void* data,
                                         size_t len) {
     texture_entry* entry = mx_alloc(mx_default_allocator(), sizeof(texture_entry));
     memset(entry, 0, sizeof(texture_entry));
@@ -2287,7 +2287,7 @@ mgfx_th mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter) {
     return entry->key;
 }
 
-mgfx_th mgfx_texture_create_from_path(const char* path, VkFormat format) {
+mgfx_th mgfx_texture_create_from_path(const char* path, mgfx_format format) {
     int width, height, channel_count;
 
     stbi_uc* data = stbi_load(path, &width, &height, &channel_count, STBI_rgb_alpha);
@@ -2296,7 +2296,7 @@ mgfx_th mgfx_texture_create_from_path(const char* path, VkFormat format) {
     MX_ASSERT(data != NULL, "[MGFX_EXAMPLES]: Failed to load texture!");
 
     size_t size = width * height * 4;
-    MX_LOG_SUCCESS("Texture loaded: %s (%.2f mb)!", path, (float)size / MX_MB);
+    MX_LOG_TRACE("Texture loaded: %s (%.2f mb)!", path, (float)size / MX_MB);
 
     mgfx_image_info info = {
         .format = format,
@@ -2388,6 +2388,24 @@ void mgfx_set_texture(mgfx_dh dh, mgfx_th th) {
     entry->value.image = &image_entry->value;
 }
 
+mgfx_dh mgfx_descriptor_create_and_set_uniform_buffer(const char* name, mgfx_ubh ubh) {
+    mgfx_dh out = mgfx_descriptor_create(name, MGFX_UNIFORM_TYPE_UNIFORM_BUFFER);
+    mgfx_set_buffer(out, ubh);
+    return out;
+}
+
+mgfx_dh mgfx_descriptor_create_and_set_storage_buffer(const char* name, mgfx_sbh sbh) {
+    mgfx_dh out = mgfx_descriptor_create(name, MGFX_UNIFORM_TYPE_STORAGE_BUFFER);
+    mgfx_set_buffer(out, (mgfx_ubh){.idx = sbh.idx});
+    return out;
+}
+
+mgfx_dh mgfx_descriptor_create_and_set_texture(const char* name, mgfx_th th) {
+    mgfx_dh out = mgfx_descriptor_create(name, MGFX_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER);
+    mgfx_set_texture(out, th);
+    return out;
+}
+
 void mgfx_descriptor_destroy(mgfx_dh dh) {}
 
 mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
@@ -2466,7 +2484,8 @@ void mgfx_bind_transient_index_buffer(mgfx_transient_buffer tib) {
     current_draw->tib = tib;
 }
 
-void mgfx_bind_descriptor(uint32_t ds_idx, mgfx_dh dh) {
+void mgfx_bind_descriptor(mgfx_dh dh) {
+    uint32_t ds_idx = 0;
     MX_ASSERT(ds_idx < MGFX_SHADER_MAX_DESCRIPTOR_SET);
 
     mgfx_draw* current_draw = &s_draws[s_draw_count];
@@ -2500,12 +2519,12 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
               "Reached max draws! Consider instancing or batching!");
     mgfx_draw* cdraw = &s_draws[s_draw_count];
 
-    program_entry* entry;
-    HASH_FIND(hh, s_program_table, &ph, sizeof(ph), entry);
-    MX_ASSERT(entry != NULL, "Program invalid handle!");
+    program_entry* program_entry;
+    HASH_FIND(hh, s_program_table, &ph, sizeof(ph), program_entry);
+    MX_ASSERT(program_entry != NULL, "Program invalid handle!");
 
-    if ((VkPipeline)entry->value.pipeline == VK_NULL_HANDLE) {
-        mgfx_program* program = &entry->value;
+    if ((VkPipeline)program_entry->value.pipeline == VK_NULL_HANDLE) {
+        mgfx_program* program = &program_entry->value;
 
         shader_entry* vs_entry;
         HASH_FIND(hh,
@@ -2566,21 +2585,34 @@ void mgfx_submit(uint8_t target, mgfx_ph ph) {
     cdraw->view_target = target;
     cdraw->ph = ph;
 
+#ifdef MX_DEBUG
+    mx_bool valid_mtx = MX_FALSE;
+    for (int i = 0; i < 16; i++) {
+        if (s_current_transform[i] != 0) {
+            valid_mtx = MX_TRUE;
+        }
+    }
+    if (!valid_mtx) {
+        MX_LOG_WARN("Draw call to %s transform not set!", program_entry->value.name);
+    }
+#endif
     memcpy(cdraw->pc.model.val, s_current_transform, sizeof(float) * 16);
+    cdraw->pc.model_inv = mx_mat4_inverse(cdraw->pc.model);
+
     memcpy(cdraw->pc.view.val, s_current_view, sizeof(float) * 16);
     memcpy(cdraw->pc.proj, s_current_proj, sizeof(float) * 16);
 
-    cdraw->pc.model_inv = mx_mat4_inverse(cdraw->pc.model);
     cdraw->pc.view_inv = mx_mat4_inverse(cdraw->pc.view);
 
-    // TODO: Make ph.idx a uint16_t
+    // TODO: Hash each to uint16_t
     cdraw->sort_key = ((uint64_t)(target) << 56) |         // highest priority (view)
                       ((uint64_t)(ph.idx & 0xFFFF) << 40); // then shader program
     /*| ((uint64_t)(descriptors_hash) << 8);*/
+
     ++s_draw_count;
 }
 
-void mgfx_frame() {
+int mgfx_frame() {
     static uint64_t s_frame_ctr = 0;
 
     // Get current frame.
@@ -2590,7 +2622,7 @@ void mgfx_frame() {
     VK_CHECK(vkWaitForFences(s_device, 1, &frame->render_fence, VK_TRUE, UINT64_MAX));
 
     if (!swapchain_update(frame, s_width, s_height, &s_swapchain)) {
-        return;
+        return MGFX_WARN_SWAPCHAIN_RESIZE;
     }
 
     VK_CHECK(vkResetFences(s_device, 1, &frame->render_fence));
@@ -2820,7 +2852,14 @@ void mgfx_frame() {
                                   &dh,
                                   sizeof(mgfx_dh),
                                   descriptor_entry);
-                        MX_ASSERT(descriptor_entry != NULL, "Descriptor invalid handle!");
+
+                        if (!descriptor_entry) {
+                            MX_LOG_WARN(
+                                "Shader Program '%s' binding (%u) invalid handle!",
+                                program_entry->value.name,
+                                bind_idx);
+                            MX_ASSERT(0);
+                        }
 
                         switch (descriptor_entry->value.type) {
                         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -2867,6 +2906,13 @@ void mgfx_frame() {
                           &s_view_targets[target],
                           sizeof(mgfx_fbh),
                           fb_entry);
+
+                if (!fb_entry) {
+                    MX_LOG_ERROR("[MGFX] Invalid frame buffer bound at view target %u",
+                                 target);
+                    continue;
+                }
+
                 fb = &fb_entry->value;
             }
 
@@ -2894,13 +2940,6 @@ void mgfx_frame() {
             }
 
             vk_cmd_begin_rendering(frame->cmd, fb);
-            /*MX_LOG_INFO("TARGET : %u", target);*/
-            /*for (uint32_t i = 0; i < fb->color_attachment_count; i++) {*/
-            /*    MX_LOG_INFO("color_attachment: %lu",
-             * (uint64_t)fb->color_attachment_views[i]);*/
-            /*}*/
-            /*MX_LOG_INFO("depth_attachment: %lu",
-             * (uint64_t)fb->depth_attachment_view);*/
         }
 
         // Check program in view target.
@@ -3145,7 +3184,7 @@ void mgfx_frame() {
         break;
     case (VK_ERROR_OUT_OF_DATE_KHR): {
         s_swapchain.resize = MX_TRUE;
-        return;
+        return MGFX_WARN_SWAPCHAIN_RESIZE;
     } break;
 
     default:
@@ -3155,6 +3194,8 @@ void mgfx_frame() {
 
     ++s_frame_ctr;
     s_frame_idx = (s_frame_idx + 1) % MGFX_FRAME_COUNT;
+
+    return MX_SUCCESS;
 };
 
 // Debug tools
@@ -3278,7 +3319,7 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...) {
 
     mgfx_bind_transient_vertex_buffer(tvb);
     mgfx_bind_transient_index_buffer(tib);
-    mgfx_bind_descriptor(0, dbg_ui_font_atlas_dh);
+    mgfx_bind_descriptor(dbg_ui_font_atlas_dh);
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, dbg_ui_ph);
 }

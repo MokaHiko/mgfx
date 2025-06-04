@@ -241,7 +241,7 @@ static uint32_t k_cube_indices[] = {
 
 static const size_t k_cube_index_count = sizeof(k_cube_indices) / sizeof(uint32_t);
 
-mgfx_th load_texture_2d_from_path(const char* path, VkFormat format) {
+mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format) {
     int width, height, channel_count;
 
     stbi_uc* data = stbi_load(path, &width, &height, &channel_count, STBI_rgb_alpha);
@@ -250,7 +250,7 @@ mgfx_th load_texture_2d_from_path(const char* path, VkFormat format) {
     MX_ASSERT(data != NULL, "[MGFX_EXAMPLES]: Failed to load texture!");
 
     size_t size = width * height * 4;
-    MX_LOG_SUCCESS("Texture loaded: %s (%.2f mb)!", path, (float)size / MX_MB);
+    MX_LOG_TRACE("Texture: %s (%.2f mb)!", path, (float)size / MX_MB);
 
     mgfx_image_info info = {
         .format = format,
@@ -440,19 +440,21 @@ int mgfx_example_app() {
 
     // Init gizmos
     mgfx_vertex_layout gizmo_vl = {0};
-    MGFX_DEFAULT_CUBE_VBH = mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
-    MGFX_DEFAULT_CUBE_IBH = mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
+    MGFX_DEFAULT_CUBE_VBH =
+        mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
+    MGFX_DEFAULT_CUBE_IBH =
+        mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
     MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.frag.glsl.spv");
 
-    const mgfx_graphics_ex_create_info gizmo_gfx_info = {
-        .polygon_mode = MGFX_LINE,
-        .primitive_topology = MGFX_TRIANGLE_LIST,
-    };
-
     MGFX_GIZMO_PH =
-        mgfx_program_create_graphics_ex(MGFX_GIZMO_VSH, MGFX_GIZMO_FSH, &gizmo_gfx_info);
+        mgfx_program_create_graphics(MGFX_GIZMO_VSH,
+                                     MGFX_GIZMO_FSH,
+                                     {
+                                         .polygon_mode = MGFX_LINE,
+                                         .primitive_topology = MGFX_TRIANGLE_LIST,
+                                     });
 
     mgfx_example_init();
 

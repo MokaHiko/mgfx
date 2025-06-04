@@ -1,5 +1,6 @@
 #include "gltf_loader.h"
 #include "mgfx/defines.h"
+#include "mgfx/mgfx.h"
 
 #include <mx/mx_log.h>
 
@@ -147,6 +148,9 @@ static void gltf_process_node(const cgltf_data* gltf,
 
 #define MGFX_MAX_DIR_LEN 256
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene) {
+    // TODO:MAKE DEFAULT
+    scene->vl = &MGFX_PNTU32F_LAYOUT;
+
     static mx_scoped_allocator(15 * MX_MB) tmp = mx_scoped_allocator_create();
 
     cgltf_options options = {0};
@@ -187,10 +191,9 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
     if ((flags & gltf_loader_flag_materials) == gltf_loader_flag_materials) {
         for (size_t i = 0; i < data->materials_count; i++) {
             const cgltf_material* mat = &data->materials[i];
-            MX_LOG_INFO("(%u) Material: %s",
-                        mat - data->materials,
-                        mat->name ? mat->name : "<unamed>");
-
+            MX_LOG_TRACE("(%u) Material: %s",
+                         mat - data->materials,
+                         mat->name ? mat->name : "<unamed>");
             // PBR
             if (mat->has_pbr_metallic_roughness) {
                 memcpy(&scene->materials[i].properties.albedo,
@@ -209,7 +212,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          VK_FORMAT_R8G8B8A8_SRGB);
+                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].albedo_texture = scene->textures[tex_idx];
@@ -245,7 +248,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          VK_FORMAT_R8G8B8A8_SRGB);
+                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].metallic_roughness_texture =
@@ -265,7 +268,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          VK_FORMAT_R8G8B8A8_SRGB);
+                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].normal_texture = scene->textures[tex_idx];
@@ -284,7 +287,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          VK_FORMAT_R8G8B8A8_SRGB);
+                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].occlusion_texture = scene->textures[tex_idx];
@@ -303,7 +306,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          VK_FORMAT_R8G8B8A8_SRGB);
+                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
                     }
 
                     scene->materials[i].emissive_texture = scene->textures[tex_idx];
@@ -486,7 +489,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
             for (int k = 0; k < 5; k++) {
                 mx_vec3* pos =
                     (mx_vec3*)(mesh_primitive->vertices + (k * scene->vl->stride));
-                MX_LOG_INFO("%.2f %.2f %.2f", pos->x, pos->y, pos->z);
             };
 
             mesh_primitive->vbh = mgfx_vertex_buffer_create(mesh_primitive->vertices,

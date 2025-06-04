@@ -1,5 +1,6 @@
 #include "mgfx/defines.h"
 #include "mgfx/mgfx.h"
+
 #include <ex_common.h>
 #include <gltf_loading/gltf_loader.h>
 
@@ -53,7 +54,7 @@ mgfx_ubh scene_data_buffer;
 mgfx_dh u_scene_data;
 
 directional_light sun_light = {.data = {.direction = {3.0f, -8.0f, 3.0f},
-                                        .distance = 1.0f,
+                                        .distance = 10.0f,
                                         .intensity = {1, 1, 1, 1.0f},
                                         .light_space_matrix = {0.0f}}};
 mgfx_ubh sun_light_buffer;
@@ -63,7 +64,7 @@ point_light point_lights[SCENE_MAX_POINT_LIGHTS] = {0};
 mgfx_sbh point_lights_buffer;
 mgfx_dh u_point_lights;
 
-mgfx_imgh shadow_pass_dattachmen;
+mgfx_imgh shadow_pass_dattachment;
 mgfx_fbh shadow_pass_fbh;
 
 mgfx_sh shadow_pass_vs;
@@ -122,7 +123,7 @@ mgfx_th mesh_pass_cattachment_th;
 mgfx_dh u_mesh_pass_cattachment;
 
 mgfx_scene sponza;
-mgfx_scene helmet;
+mgfx_scene tree;
 void mgfx_example_init() {
     // Common
     camera_create(mgfx_camera_type_orthographic, &sun_light.camera);
@@ -143,7 +144,8 @@ void mgfx_example_init() {
     scene.point_light_count = 1;
 
     scene_data_buffer = mgfx_uniform_buffer_create(&scene, sizeof(scene_data));
-    u_scene_data = mgfx_descriptor_create("scene_data", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    u_scene_data =
+        mgfx_descriptor_create("scene_data", VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     mgfx_set_buffer(u_scene_data, scene_data_buffer);
 
     // Directional light shadow pass
@@ -154,23 +156,23 @@ void mgfx_example_init() {
         .layers = 1,
     };
 
-    shadow_pass_dattachmen = mgfx_image_create(
+    shadow_pass_dattachment = mgfx_image_create(
         &shadow_pass_depth_attachment_info,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-    shadow_pass_fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_dattachmen);
+    shadow_pass_fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_dattachment);
     mgfx_set_view_target(SHADOW_FRAME_TARGET, shadow_pass_fbh);
 
     shadow_pass_vs = mgfx_shader_create("shadow.vert.spv");
 
-    const mgfx_graphics_ex_create_info shadow_pass_create_info = {
-        .name = {"shadow_pass"},
-        .polygon_mode = MGFX_FILL,
-        .primitive_topology = MGFX_TRIANGLE_LIST,
-        .cull_mode = MGFX_CULL_FRONT,
-    };
-    shadow_pass_program = mgfx_program_create_graphics_ex(shadow_pass_vs,
-                                                          (mgfx_sh){.idx = 0},
-                                                          &shadow_pass_create_info);
+    shadow_pass_program =
+        mgfx_program_create_graphics(shadow_pass_vs,
+                                     (mgfx_sh){.idx = 0},
+                                     {
+                                         .name = {"shadow_pass"},
+                                         .polygon_mode = MGFX_FILL,
+                                         .primitive_topology = MGFX_TRIANGLE_LIST,
+                                         .cull_mode = MGFX_CULL_FRONT,
+                                     });
 
     // HDR Mesh pass
     struct mgfx_image_info hdr_color_info = {
@@ -218,17 +220,17 @@ void mgfx_example_init() {
 
     mesh_pass_vs = mgfx_shader_create("lit.vert.spv");
     mesh_pass_fs = mgfx_shader_create("lit.frag.spv");
-    mesh_pass_program = mgfx_program_create_graphics_ex(mesh_pass_vs,
-                                                        mesh_pass_fs,
-                                                        &(mgfx_graphics_ex_create_info){
-                                                            .name = "lit_mesh_pass",
-                                                            .cull_mode = MGFX_CULL_BACK,
-                                                        });
+    mesh_pass_program = mgfx_program_create_graphics(mesh_pass_vs,
+                                                     mesh_pass_fs,
+                                                     &(mgfx_graphics_create_info){
+                                                         .name = "lit_mesh_pass",
+                                                         .cull_mode = MGFX_CULL_BACK,
+                                                     });
 
     u_shadow_map =
         mgfx_descriptor_create("shadow_map", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     shadow_fba_texture =
-        mgfx_texture_create_from_image(shadow_pass_dattachmen, VK_FILTER_LINEAR);
+        mgfx_texture_create_from_image(shadow_pass_dattachment, VK_FILTER_LINEAR);
     mgfx_set_texture(u_shadow_map, shadow_fba_texture);
 
     mgfx_vertex_layout vl;
@@ -240,8 +242,8 @@ void mgfx_example_init() {
     mgfx_vertex_layout_add(&vl, MGFX_VERTEX_ATTRIBUTE_TANGENT, sizeof(float) * 4);
     mgfx_vertex_layout_end(&vl);
 
-    helmet.vl = &vl;
-    LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &helmet);
+    tree.vl = &vl;
+    LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &tree);
 
     sponza.vl = &vl;
     LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza);
@@ -249,11 +251,10 @@ void mgfx_example_init() {
     // Blit pass
     blit_vs = mgfx_shader_create("blit.vert.spv");
     blit_fsh = mgfx_shader_create("blit.frag.spv");
-    blit_program = mgfx_program_create_graphics_ex(blit_vs,
-                                                   blit_fsh,
-                                                   &(mgfx_graphics_ex_create_info){
-                                                       .name = "blit_pass",
-                                                   });
+    blit_program =
+        mgfx_program_create_graphics(blit_vs,
+                                     blit_fsh,
+                                     &(mgfx_graphics_create_info){.name = "blit_pass"});
 
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
                                          sizeof(MGFX_FS_QUAD_VERTICES),
@@ -299,10 +300,10 @@ void mgfx_example_init() {
     }
 
     blur_pass_fs = mgfx_shader_create("blur.frag.spv");
-    blur_pass_program = mgfx_program_create_graphics_ex(
-        blit_vs,
-        blur_pass_fs,
-        &(mgfx_graphics_ex_create_info){.name = "blur_pass"});
+    blur_pass_program =
+        mgfx_program_create_graphics(blit_vs,
+                                     blur_pass_fs,
+                                     &(mgfx_graphics_create_info){.name = "blur_pass"});
 
     blur_settings horiz = {
         .weights = {0.1945946, 0.1216216, 0.054054, 0.016216},
@@ -359,19 +360,18 @@ void draw_scene(mgfx_scene* scene,
             mgfx_bind_index_buffer(node_primitive->ibh);
 
             if (!is_shadow_pass) {
-                mgfx_bind_descriptor(0, u_scene_data);
-                mgfx_bind_descriptor(0, u_sun_light);
-                mgfx_bind_descriptor(0, u_shadow_map);
-                mgfx_bind_descriptor(0, u_point_lights);
+                mgfx_bind_descriptor(u_scene_data);
+                mgfx_bind_descriptor(u_sun_light);
+                mgfx_bind_descriptor(u_shadow_map);
+                mgfx_bind_descriptor(u_point_lights);
 
-                mgfx_bind_descriptor(0, node_primitive->material->u_properties_buffer);
-                mgfx_bind_descriptor(0, node_primitive->material->u_albedo_texture);
+                mgfx_bind_descriptor(node_primitive->material->u_properties_buffer);
+                mgfx_bind_descriptor(node_primitive->material->u_albedo_texture);
                 mgfx_bind_descriptor(
-                    0,
                     node_primitive->material->u_metallic_roughness_texture);
-                mgfx_bind_descriptor(0, node_primitive->material->u_normal_texture);
-                mgfx_bind_descriptor(0, node_primitive->material->u_occlusion_texture);
-                mgfx_bind_descriptor(0, node_primitive->material->u_emissive_texture);
+                mgfx_bind_descriptor(node_primitive->material->u_normal_texture);
+                mgfx_bind_descriptor(node_primitive->material->u_occlusion_texture);
+                mgfx_bind_descriptor(node_primitive->material->u_emissive_texture);
             }
 
             mgfx_submit(target, ph);
@@ -435,7 +435,7 @@ void mgfx_example_update() {
                shadow_pass_program,
                sponza_transform,
                MX_TRUE);
-    draw_scene(&helmet,
+    draw_scene(&tree,
                SHADOW_FRAME_TARGET,
                shadow_pass_program,
                helmet_transform,
@@ -446,7 +446,7 @@ void mgfx_example_update() {
     mgfx_set_view(g_example_camera.view.val);
 
     draw_scene(&sponza, MESH_FRAME_TARGET, mesh_pass_program, sponza_transform, MX_FALSE);
-    draw_scene(&helmet, MESH_FRAME_TARGET, mesh_pass_program, helmet_transform, MX_FALSE);
+    draw_scene(&tree, MESH_FRAME_TARGET, mesh_pass_program, helmet_transform, MX_FALSE);
 
     // ----- Post Processing -----
 
@@ -454,8 +454,8 @@ void mgfx_example_update() {
     mgfx_bind_vertex_buffer(quad_vbh);
     mgfx_bind_index_buffer(quad_ibh);
 
-    mgfx_bind_descriptor(0, u_horiz_blur_settings);
-    mgfx_bind_descriptor(0, u_brightness);
+    mgfx_bind_descriptor(u_horiz_blur_settings);
+    mgfx_bind_descriptor(u_brightness);
 
     mgfx_submit(BLUR_0_FRAME_TARGET, blur_pass_program);
 
@@ -464,12 +464,12 @@ void mgfx_example_update() {
         mgfx_bind_index_buffer(quad_ibh);
 
         if ((i + 1) % 2 != 0) {
-            mgfx_bind_descriptor(0, u_horiz_blur_settings);
+            mgfx_bind_descriptor(u_horiz_blur_settings);
         } else {
-            mgfx_bind_descriptor(0, u_vert_blur_settings);
+            mgfx_bind_descriptor(u_vert_blur_settings);
         }
 
-        mgfx_bind_descriptor(0, u_blur_pingpong_dh[(i + 1) % 2]);
+        mgfx_bind_descriptor(u_blur_pingpong_dh[(i + 1) % 2]);
         mgfx_submit(BLUR_0_FRAME_TARGET + i, blur_pass_program);
     }
 
@@ -481,10 +481,10 @@ void mgfx_example_update() {
     mgfx_bind_index_buffer(quad_ibh);
 
     if (mgfx_get_key(GLFW_KEY_L)) {
-        mgfx_bind_descriptor(0, u_shadow_map);
+        mgfx_bind_descriptor(u_shadow_map);
     } else {
-        mgfx_bind_descriptor(0, u_mesh_pass_cattachment);
-        mgfx_bind_descriptor(0, u_blur_pingpong_dh[1]);
+        mgfx_bind_descriptor(u_mesh_pass_cattachment);
+        mgfx_bind_descriptor(u_blur_pingpong_dh[1]);
     }
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
@@ -507,7 +507,7 @@ void mgfx_example_update() {
 }
 
 void mgfx_example_shutdown() {
-    scene_destroy(&helmet);
+    scene_destroy(&tree);
     scene_destroy(&sponza);
 
     // Blit pass resources
@@ -560,7 +560,7 @@ void mgfx_example_shutdown() {
 
     mgfx_descriptor_destroy(u_shadow_map);
 
-    mgfx_image_destroy(shadow_pass_dattachmen);
+    mgfx_image_destroy(shadow_pass_dattachment);
     mgfx_framebuffer_destroy(shadow_pass_fbh);
 
     // Scene common
