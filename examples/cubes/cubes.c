@@ -149,7 +149,12 @@ void mgfx_example_init() {
     cube_sh = mgfx_shader_create("cubes.vert.spv");
     fsh = mgfx_shader_create("cubes.frag.spv");
 
-    gfxph = mgfx_program_create_graphics(cube_sh, fsh);
+    gfxph = mgfx_program_create_graphics(cube_sh,
+                                         fsh,
+                                         {
+                                             .name = "cubes_program",
+                                             .cull_mode = MGFX_CULL_BACK,
+                                         });
 
     mgfx_vertex_layout vl = {0};
     mgfx_vertex_layout_begin(&vl);

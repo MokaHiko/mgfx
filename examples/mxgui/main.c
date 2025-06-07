@@ -6,12 +6,8 @@
 #include <mx/mx_log.h>
 
 #include <mx/mx_math_mtx.h>
-#include <mx/mx_math_types.h>
-#include <stdint.h>
 
 #include "ecs.h"
-#include "mgfx/defines.h"
-#include "mx/mx.h"
 
 // Scene graph
 typedef mx_vec3 position;
@@ -67,17 +63,15 @@ typedef struct static_mesh_renderer {
     mgfx_ph ph;
 } static_mesh_renderer;
 
-struct pbr_material {
-    enum {
-        PBR_TEXTURE_ALBEDO_MAP,
-        PBR_TEXTURE_METALLIC_ROUGHNESS_MAP,
-        PBR_TEXTURE_NORMAL_MAP,
-        PBR_TEXTURE_OCCLUSION_MAP,
-        PBR_TEXTURE_EMISSIVE_MAP,
+typedef enum pbr_material_textures {
+    PBR_TEXTURE_ALBEDO_MAP,
+    PBR_TEXTURE_METALLIC_ROUGHNESS_MAP,
+    PBR_TEXTURE_NORMAL_MAP,
+    PBR_TEXTURE_OCCLUSION_MAP,
+    PBR_TEXTURE_EMISSIVE_MAP,
 
-        PBR_TEXTURE_COUNT,
-    };
-};
+    PBR_TEXTURE_COUNT,
+} pbr_material_textures;
 
 mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
     mx_actor out = mx_actor_spawn({.name = "wowxa"});
@@ -102,7 +96,7 @@ mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
 
             mx_actor node = mx_actor_spawn({.parent = out});
 
-            // TODO: MAke gltf->loader output locals
+            // TODO: Make gltf->loader output locals
             mx_mat4 mtx = gltf->nodes[n].matrix;
 
             mx_actor_set(node,
@@ -203,7 +197,7 @@ int blit_pass_begin(blit_pass* blit_pass) {
 
 void blit_pass_end(blit_pass* blit_pass) {}
 
-typedef struct geometry_pass {
+typedef struct render_pass {
     struct pass_uniform {
         mgfx_dh uh;
         mgfx_uniform_type type;
@@ -211,6 +205,7 @@ typedef struct geometry_pass {
         union {
             mgfx_th th;
             mgfx_ubh ubh;
+            mgfx_sbh sbh;
         };
     } pass_uniforms[MGFX_MAX_UNIFORMS];
     uint32_t pass_uniform_count;
@@ -218,9 +213,9 @@ typedef struct geometry_pass {
     mx_vec4 view_clear;
     uint8_t view_target;
     mgfx_fbh fbh;
-} geometry_pass;
+} render_pass;
 
-int geometry_pass_begin(geometry_pass* mesh_pass) {
+int render_pass_begin(render_pass* mesh_pass) {
     mgfx_set_view_target(mesh_pass->view_target, mesh_pass->fbh);
     mgfx_set_view_clear(mesh_pass->view_target, mesh_pass->view_clear.elements);
 
@@ -248,7 +243,7 @@ int geometry_pass_begin(geometry_pass* mesh_pass) {
     return MX_SUCCESS;
 };
 
-mx_bool geometry_bind_pass_descriptors(geometry_pass* mesh_pass) {
+mx_bool render_pass_bind_descriptors(render_pass* mesh_pass) {
     for (uint32_t i = 0; i < mesh_pass->pass_uniform_count; i++) {
         mgfx_bind_descriptor(mesh_pass->pass_uniforms[i].uh);
     }
@@ -256,9 +251,9 @@ mx_bool geometry_bind_pass_descriptors(geometry_pass* mesh_pass) {
     return MX_TRUE;
 }
 
-void geometry_pass_end(geometry_pass* mesh_pass) {}
+void render_pass_end(render_pass* mesh_pass) {}
 
-geometry_pass shadow_pass;
+render_pass shadow_pass;
 mgfx_ph shadow_ph;
 
 typedef enum forward_pass_uniforms {
@@ -269,20 +264,27 @@ typedef enum forward_pass_uniforms {
 
     FORWARD_PASS_UNIFORM_COUNT,
 } forward_pass_uniforms;
-geometry_pass forward_pass;
+render_pass forward_pass;
 
+typedef enum blur_pass_uniforms {
+    BLUR_PASS_SETTINGS_UNIFORM,
+    BLUR_PASS_BLUR_IMAGE_UNIFORM,
+} blur_pass_uniforms;
 enum { BLUR_PASS_COUNT = 10 };
 blit_pass blur_pingpong_pass[BLUR_PASS_COUNT];
 
+typedef enum post_process_uniforms {
+    POST_PROCESS_PASS_COLOR_UNIFORM,
+    POST_PROCESS_PASS_BLOOM_UNIFORM,
+} post_process_uniforms;
 blit_pass post_process_resolve_pass;
 
 point_light point_lights = {0};
 mgfx_sbh point_lights_buffer;
 mgfx_dh u_point_lights;
 
-void mx_mat4_log(mx_mat4 mat) {}
-
 void mgfx_example_init() {
+
     if (mx_ecs_init() != MX_SUCCESS) {
         return;
     }
@@ -297,6 +299,7 @@ void mgfx_example_init() {
     mx_component_declare(static_mesh_renderer);
     mx_component_declare(directional_light);
     mx_component_declare(point_light);
+
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
                                          sizeof(MGFX_FS_QUAD_VERTICES),
                                          &MGFX_PNTU32F_LAYOUT);
@@ -308,7 +311,7 @@ void mgfx_example_init() {
                                                                    point_lights_buffer);
 
     struct mgfx_image_info hdr_color_info = {
-        .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+        .format = MGFX_FORMAT_R16G16B16A16_SFLOAT,
         .width = APP_WIDTH,
         .height = APP_HEIGHT,
         .layers = 1,
@@ -316,14 +319,14 @@ void mgfx_example_init() {
 
     mgfx_imgh shadow_pass_depth_attachment = mgfx_image_create(
         &(mgfx_image_info){
-            .format = VK_FORMAT_D32_SFLOAT,
+            .format = MGFX_FORMAT_D32_SFLOAT,
             .width = APP_WIDTH,
             .height = APP_HEIGHT,
             .layers = 1,
         },
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-    shadow_pass = (geometry_pass){
+    shadow_pass = (render_pass){
         .view_target = SHADOW_FRAME_TARGET,
         .fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_depth_attachment)};
 
@@ -356,7 +359,7 @@ void mgfx_example_init() {
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
             VK_IMAGE_USAGE_SAMPLED_BIT);
 
-    forward_pass = (geometry_pass){
+    forward_pass = (render_pass){
         .view_target = FORWARD_FRAME_TARGET,
         .view_clear = {0.0f, 0.0f, 0.0f, 1.0f},
         .fbh = mgfx_framebuffer_create(
@@ -588,7 +591,9 @@ void mgfx_example_init() {
     // LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &damaged_helmet_scene);
     // mx_actor damaged_helmet = actor_spawn_from_gltf(&damaged_helmet_scene, pbr_ph);
     // position* damaged_helmet_pos = mx_actor_find(damaged_helmet, position);
-    // *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 1.5f, 0.0f});
+    // *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 1.5f,
+    // 0.0f});
+
     mgfx_scene trees_scene;
     load_scene_from_path("/Users/christianmarkg.solon/Downloads/trees02/trees02.gltf",
                          gltf_loader_flag_default,
@@ -694,14 +699,15 @@ void mgfx_example_update() {
                 0);
 
             // ----- Shadow pass -----
-            if (geometry_pass_begin(&shadow_pass) == MX_SUCCESS) {
+            if (render_pass_begin(&shadow_pass) == MX_SUCCESS) {
+                mgfx_set_proj(proj.val);
+                mgfx_set_view(view.val);
+
                 mx_darray_t(static_mesh_renderer) sms =
                     mx_query_view(static_mesh_renderer);
 
-                mgfx_set_proj(proj.val);
-                mgfx_set_view(view.val);
                 for (size_t i = 0; i < MX_DARRAY_COUNT(&sms); i++) {
-                    if (geometry_bind_pass_descriptors(&shadow_pass)) {
+                    if (render_pass_bind_descriptors(&shadow_pass)) {
                         mgfx_set_transform(sms[i].transfom_matrix.val);
 
                         mgfx_bind_vertex_buffer(sms[i].vbh);
@@ -711,7 +717,7 @@ void mgfx_example_update() {
                     }
                 }
 
-                geometry_pass_end(&shadow_pass);
+                render_pass_end(&shadow_pass);
             }
 
             // Only one dir light each scene
@@ -720,14 +726,13 @@ void mgfx_example_update() {
     };
 
     // ----- Forward pass -----
-    if (geometry_pass_begin(&forward_pass) == MX_SUCCESS) {
+    if (render_pass_begin(&forward_pass) == MX_SUCCESS) {
+        mgfx_set_proj(g_example_camera.proj.val);
+        mgfx_set_view(g_example_camera.view.val);
+
         mx_darray_t(static_mesh_renderer) sms = mx_query_view(static_mesh_renderer);
-
         for (size_t i = 0; i < MX_DARRAY_COUNT(&sms); i++) {
-            mgfx_set_proj(g_example_camera.proj.val);
-            mgfx_set_view(g_example_camera.view.val);
-
-            if (geometry_bind_pass_descriptors(&forward_pass)) {
+            if (render_pass_bind_descriptors(&forward_pass)) {
                 mgfx_set_transform(sms[i].transfom_matrix.val);
 
                 mgfx_bind_descriptor(sms[i].u_properties);
@@ -743,18 +748,16 @@ void mgfx_example_update() {
             }
         }
 
-        geometry_pass_end(&forward_pass);
+        render_pass_end(&forward_pass);
     }
 
     // ----- Post Processing -----
 
     // Blur pass
-    {
-        for (uint32_t i = 0; i < BLUR_PASS_COUNT; i++) {
-            if (blit_pass_begin(&blur_pingpong_pass[i]) == MX_SUCCESS) {
-                mgfx_submit(BLUR_0_FRAME_TARGET + i, blur_pingpong_pass[i].ph);
-                blit_pass_end(&blur_pingpong_pass[i]);
-            }
+    for (uint32_t i = 0; i < BLUR_PASS_COUNT; i++) {
+        if (blit_pass_begin(&blur_pingpong_pass[i]) == MX_SUCCESS) {
+            mgfx_submit(BLUR_0_FRAME_TARGET + i, blur_pingpong_pass[i].ph);
+            blit_pass_end(&blur_pingpong_pass[i]);
         }
     }
 

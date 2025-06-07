@@ -148,10 +148,8 @@ static void gltf_process_node(const cgltf_data* gltf,
 
 #define MGFX_MAX_DIR_LEN 256
 void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene* scene) {
-    // TODO:MAKE DEFAULT
+    mx_allocator_t tmp = mx_arena_create(MX_MB * 15);
     scene->vl = &MGFX_PNTU32F_LAYOUT;
-
-    static mx_scoped_allocator(15 * MX_MB) tmp = mx_scoped_allocator_create();
 
     cgltf_options options = {0};
     cgltf_data* data = NULL;
@@ -564,7 +562,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
     cgltf_free(data);
 
     // TODO: Arena Reset
-    __mx_temp_arena.head = 0;
+    mx_arena_destroy(tmp);
 };
 
 void scene_destroy(mgfx_scene* scene) {

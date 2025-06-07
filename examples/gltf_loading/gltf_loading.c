@@ -1,4 +1,5 @@
 #include "gltf_loader.h"
+#include "mgfx/defines.h"
 #include <ex_common.h>
 
 #include <mx/mx_asserts.h>
@@ -26,10 +27,12 @@ mgfx_dh u_color_fba;
 
 mgfx_scene gltf_scene;
 
+#include "vulkan/vulkan_core.h"
+
 const char* name;
 void mgfx_example_init() {
     struct mgfx_image_info color_attachment_info = {
-        .format = VK_FORMAT_R16G16B16A16_SFLOAT,
+        .format = MGFX_FORMAT_R16G16B16A16_SFLOAT,
         .width = APP_WIDTH,
         .height = APP_HEIGHT,
         .layers = 1,
@@ -42,7 +45,7 @@ void mgfx_example_init() {
             VK_IMAGE_USAGE_SAMPLED_BIT);
 
     struct mgfx_image_info depth_attachment_info = {
-        .format = VK_FORMAT_D32_SFLOAT,
+        .format = MGFX_FORMAT_D32_SFLOAT,
         .width = APP_WIDTH,
         .height = APP_HEIGHT,
         .layers = 1,
@@ -57,7 +60,7 @@ void mgfx_example_init() {
 
     fp_vs = mgfx_shader_create("lit.vert.spv");
     fp_fs = mgfx_shader_create("lit.frag.spv");
-    fp_program = mgfx_program_create_graphics(fp_vs, fp_fs);
+    fp_program = mgfx_program_create_graphics(fp_vs, fp_fs, {.name = "forward_pass"});
 
     mgfx_vertex_layout vl;
 
@@ -75,7 +78,12 @@ void mgfx_example_init() {
 
     quad_vsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.vert.glsl.spv");
     quad_fsh = mgfx_shader_create(MGFX_ASSET_PATH "shaders/blit.frag.glsl.spv");
-    blit_program = mgfx_program_create_graphics(quad_vsh, quad_fsh);
+    blit_program = mgfx_program_create_graphics(quad_vsh,
+                                                quad_fsh,
+                                                {
+                                                    .name = "blit",
+                                                    .cull_mode = MGFX_CULL_NONE,
+                                                });
 
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
                                          sizeof(MGFX_FS_QUAD_VERTICES),
@@ -84,8 +92,8 @@ void mgfx_example_init() {
         mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     u_color_fba =
-        mgfx_descriptor_create("u_diffuse", VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    color_fba_texture = mgfx_texture_create_from_image(color_fba, VK_FILTER_NEAREST);
+        mgfx_descriptor_create("u_diffuse", MGFX_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER);
+    color_fba_texture = mgfx_texture_create_from_image(color_fba, MGFX_FILTER_NEAREST);
     mgfx_set_texture(u_color_fba, color_fba_texture);
 }
 
@@ -136,13 +144,13 @@ void mgfx_example_update() {
             mgfx_bind_vertex_buffer(p->vbh);
             mgfx_bind_index_buffer(p->ibh);
 
-            mgfx_bind_descriptor(0, p->material->u_properties_buffer);
-            mgfx_bind_descriptor(0, p->material->u_albedo_texture);
+            mgfx_bind_descriptor(p->material->u_properties_buffer);
+            mgfx_bind_descriptor(p->material->u_albedo_texture);
 
-            mgfx_bind_descriptor(0, p->material->u_metallic_roughness_texture);
-            mgfx_bind_descriptor(0, p->material->u_normal_texture);
-            mgfx_bind_descriptor(0, p->material->u_occlusion_texture);
-            mgfx_bind_descriptor(0, p->material->u_emissive_texture);
+            mgfx_bind_descriptor(p->material->u_metallic_roughness_texture);
+            mgfx_bind_descriptor(p->material->u_normal_texture);
+            mgfx_bind_descriptor(p->material->u_occlusion_texture);
+            mgfx_bind_descriptor(p->material->u_emissive_texture);
 
             mgfx_submit(0, fp_program);
         }
@@ -155,7 +163,7 @@ void mgfx_example_update() {
 
     mgfx_bind_vertex_buffer(quad_vbh);
     mgfx_bind_index_buffer(quad_ibh);
-    mgfx_bind_descriptor(0, u_color_fba);
+    mgfx_bind_descriptor(u_color_fba);
 
     mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, blit_program);
 }

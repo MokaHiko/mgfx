@@ -214,7 +214,7 @@ void image_create(const mgfx_image_info* info,
                   VkImageUsageFlags usage,
                   VkImageCreateFlags flags,
                   image_vk* image) {
-    image->format = info->format;
+    image->format = (VkFormat)info->format;
     image->layer_count = info->layers;
     image->extent = (VkExtent3D){info->width, info->height, 1};
 
@@ -743,7 +743,7 @@ void shader_handle_struct(shader_vk* shader, const SpvReflectTypeDescription* td
 }
 
 void shader_create(size_t length, const char* code, shader_vk* shader) {
-    mx_scoped_allocator(10 * MX_KB) tmp = mx_scoped_allocator_create();
+    mx_allocator_t tmp = mx_arena_create(10 * MX_KB);
 
     if (length % sizeof(uint32_t) != 0) {
         MX_LOG_ERROR("Shader code size must be a multiple of 4!");
@@ -903,6 +903,8 @@ void shader_create(size_t length, const char* code, shader_vk* shader) {
     };
 
     VK_CHECK(vkCreateShaderModule(s_device, &info, NULL, &shader->module));
+
+    mx_arena_destroy(tmp);
 };
 
 void shader_destroy(shader_vk* shader) {
@@ -1523,7 +1525,7 @@ size_t mgfx_format_size(mgfx_format format) {
 }
 
 int mgfx_init(const mgfx_init_info* info) {
-    mx_scoped_allocator(MX_MB) tmp = mx_scoped_allocator_create();
+    mx_allocator_t tmp = mx_arena_create(MX_MB);
 
     VkApplicationInfo app_info = {0};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -1909,7 +1911,7 @@ int mgfx_init(const mgfx_init_info* info) {
     stbtt_InitFont(&font, ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0));
 
     const mgfx_image_info img_info = {
-        .format = VK_FORMAT_R8_UNORM,
+        .format = MGFX_FORMAT_R8_UNORM,
         .width = atlas_w,
         .height = atlas_h,
         .layers = 1,
@@ -1925,7 +1927,7 @@ int mgfx_init(const mgfx_init_info* info) {
     mgfx_set_texture(dbg_ui_font_atlas_dh, dbg_ui_font_atlas_th);
 
     const mgfx_image_info texture_info = {
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .format = MGFX_FORMAT_R8G8B8A8_UNORM,
         .width = 1,
         .height = 1,
         .layers = 1,
@@ -1957,6 +1959,8 @@ int mgfx_init(const mgfx_init_info* info) {
 
     MX_LOG_SUCCESS("MGFX Initialized!");
     return MGFX_SUCCESS;
+
+    mx_arena_destroy(tmp);
 }
 
 mgfx_vbh

@@ -27,6 +27,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glfw)
 
 target_link_libraries(mgfx PUBLIC mx vma Vulkan::Vulkan)
+target_compile_options(mgfx PRIVATE -Werror)
 
 target_include_directories(mgfx PUBLIC include)
 target_include_directories(mgfx PUBLIC third_party)

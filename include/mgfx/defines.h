@@ -16,8 +16,10 @@ typedef enum mgfx_error_code {
 } mgfx_error_code;
 
 typedef enum mgfx_format {
-    MGFX_FORMAT_D32_SFLOAT = 126,
+    MGFX_FORMAT_R8_UNORM = 9,
+    MGFX_FORMAT_R8G8B8A8_UNORM = 37,
     MGFX_FORMAT_R16G16B16A16_SFLOAT = 97,
+    MGFX_FORMAT_D32_SFLOAT = 126,
     MGFX_FORMAT_R8G8B8A8_SRGB = 43,
 } mgfx_format;
 
@@ -94,13 +96,12 @@ void mgfx_vertex_layout_end(mgfx_vertex_layout* vl);
 
 typedef MX_API struct mgfx_image_info {
     mx_strv name;
-    uint32_t format; // VkFormat
+    mgfx_format format; // VkFormat
 
     uint32_t width;
     uint32_t height;
 
     uint32_t layers;
-
     mx_bool cube_map;
 } mgfx_image_info;
 
