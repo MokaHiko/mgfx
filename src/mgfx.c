@@ -14,7 +14,6 @@
 #include <string.h>
 
 #include <vulkan/vulkan_core.h>
-
 #ifdef MX_MACOS
 #include <vulkan/vulkan_beta.h>
 #include <vulkan/vulkan_metal.h>

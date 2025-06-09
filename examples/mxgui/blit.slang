@@ -26,8 +26,9 @@ float4 fragmentMain(VOut input) {
 	hdr_color += blur_map.Sample(input.uv).rgb;
 
 	// reinhard tone mapping
-	float exposure = 0.25;
+	float exposure = 0.00004;
 	float3 mapped = float3(1.0) - exp(-hdr_color * exposure);
+    mapped = saturate(mapped); // Clamps to [0,1]
 
 	// Gamma correction if not srgb output/swapchain
     // const float gamma = 2.2;

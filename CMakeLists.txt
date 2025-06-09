@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(MGFX_BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries.")
-set(MGFX_BUILD_EXAMPLES OFF CACHE BOOL "Build examples.")
+set(MGFX_BUILD_EXAMPLES ON CACHE BOOL "Build examples.")
 
 find_package(Vulkan REQUIRED)
 add_subdirectory(third_party/vma)

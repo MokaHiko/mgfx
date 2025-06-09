@@ -7,6 +7,7 @@
 
 #include <mx/mx_string.h>
 
+const static uint32_t INVALID_COMPONENT_IDX = -1;
 static mx_darray_t(mx_actor) s_actors = NULL;
 
 mx_map_t(mx_component_id, mx_component_container, 32) s_components_info;
@@ -27,7 +28,7 @@ MX_NO_DISCARD static inline mx_component_container* container_find(mx_component_
 MX_NO_DISCARD static inline uint32_t
 actor_find_index(const mx_component_container* cc, mx_actor actor, mx_component_id id) {
     if (!cc) {
-        return MX_INVALID_ACTOR_ID;
+        return -1;
     };
 
     uint32_t count = MX_DARRAY_COUNT(&cc->actor_to_index);
@@ -39,7 +40,7 @@ actor_find_index(const mx_component_container* cc, mx_actor actor, mx_component_
     uint32_t idx = cc->actor_to_index[actor.id];
 
     if (idx >= MX_DARRAY_COUNT(&cc->darray)) {
-        return MX_INVALID_ACTOR_ID;
+        return -1;
     }
 
     return idx;
@@ -126,12 +127,20 @@ void* mx_actor_set_impl(mx_actor actor, mx_component_id id, void* data) {
         mx_darray_resize(&cc->index_to_actor, actor.id + 1);
     }
 
-    uint32_t component_idx = MX_DARRAY_COUNT(&cc->darray);
-    cc->actor_to_index[actor.id] = component_idx;
-    cc->index_to_actor[component_idx] = actor;
+    uint32_t component_idx = actor_find_index(cc, actor, id);
 
-    MX_DARRAY_ADD(&cc->darray, data);
-    ++cc->elem_count;
+    if (component_idx != INVALID_COMPONENT_IDX) {
+        memcpy(cc->darray + component_idx * cc->elem_size, data,cc->elem_size);
+    }
+    else {
+		component_idx = MX_DARRAY_COUNT(&cc->darray);
+		cc->actor_to_index[actor.id] = component_idx;
+		cc->index_to_actor[component_idx] = actor;
+
+		MX_DARRAY_ADD(&cc->darray, data);
+		++cc->elem_count;
+    }
+
     return cc->darray + component_idx * cc->elem_size;
 };
 
@@ -174,7 +183,7 @@ void mx_actor_remove_impl(mx_actor actor, mx_component_id id) {
     cc->actor_to_index[end.id] = idx_to_remove;
     cc->index_to_actor[idx_to_remove] = end;
 
-    cc->actor_to_index[actor.id] = -1;
+    cc->actor_to_index[actor.id] = MX_INVALID_ACTOR_ID;
 
     // Resize container
     --cc->elem_count;

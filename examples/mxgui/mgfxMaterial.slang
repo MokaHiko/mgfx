@@ -164,7 +164,7 @@ public struct LitMaterial : IMaterial {
     public float3 ambient(SurfaceGeometry sg) {
         // Ambient & AO lighting
         float ao = occlusion_map.Sample(sg.uv).r * ao_factor;
-        return mul(float3(0.000001), albedo.Sample(sg.uv).rgb) * ao;
+        return mul(float3(0.03), albedo.Sample(sg.uv).rgb) * ao;
     }
 };
 

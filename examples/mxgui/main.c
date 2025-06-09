@@ -18,6 +18,8 @@ typedef struct transform {
     mx_vec3 forward;
     mx_vec3 right;
     mx_mat4 matrix;
+
+    mx_actor parent;
 } transform;
 
 // Renderer
@@ -54,6 +56,8 @@ typedef struct static_mesh_renderer {
     mgfx_vbh vbh;
     mgfx_ibh ibh;
 
+    mx_bool is_static;
+
     // Material
     mgfx_dh u_properties;
 
@@ -75,10 +79,11 @@ typedef enum pbr_material_textures {
 
 mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
     mx_actor out = mx_actor_spawn({.name = "gltf"});
-    mx_actor_set(out, position, {0, 0, 0});
-    mx_actor_set(out, rotation, {0, 0, 0});
-    mx_actor_set(out, scale, {1, 1, 1});
-    mx_actor_set(out, transform, {.matrix = MX_MAT4_IDENTITY});
+
+    mx_actor_set_impl(out, component_id_from_type(position), &MX_VEC3_ONE);
+    mx_actor_set_impl(out, component_id_from_type(rotation), &MX_QUAT_IDENTITY);
+    mx_actor_set_impl(out, component_id_from_type(scale), &MX_VEC3_ONE);
+    mx_actor_set(out, transform, {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
 
     for (uint32_t n = 0; n < gltf->node_count; n++) {
         if (gltf->nodes[n].mesh == NULL) {
@@ -101,7 +106,10 @@ mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
             mx_actor_set_impl(node, component_id_from_type(rotation), &gltf->nodes[n].rotation);
 
             // TODO: Parent
-            mx_actor_set(node, transform, {.matrix = MX_MAT4_IDENTITY});
+            mx_actor_set(node, transform, {
+                .matrix = MX_MAT4_IDENTITY,
+                .parent = out
+            });
 
             static_mesh_renderer* mesh_renderer =
                 mx_actor_set(node,
@@ -287,8 +295,7 @@ void mgfx_example_init() {
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
                                          sizeof(MGFX_FS_QUAD_VERTICES),
                                          &MGFX_PNTU32F_LAYOUT);
-    quad_ibh =
-        mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
+    quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     point_lights_buffer = mgfx_storage_buffer_create(&point_lights, sizeof(point_lights));
     u_point_lights = mgfx_descriptor_create_and_set_storage_buffer("point_lights",
@@ -499,6 +506,7 @@ void mgfx_example_init() {
         .ph = blur_ph,
         .pass_uniform_count = 2,
     };
+
     for (int i = 1; i < BLUR_PASS_COUNT; i++) {
         blur_pingpong_pass[i] = (blit_pass){
             .fbh = blur_fbs[i % 2],
@@ -552,31 +560,29 @@ void mgfx_example_init() {
     mx_actor_set(sun_light, position, {0, 10, 0});
     mx_actor_set(sun_light, rotation, {0, 0, 0});
     mx_actor_set(sun_light, scale, {1, 1, 1});
-    mx_actor_set(sun_light, transform, {.matrix = MX_MAT4_IDENTITY});
+    mx_actor_set(sun_light, transform, {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
     mx_actor_set(sun_light,
                  directional_light,
                  {
                      .direction = {1.0f, -1.0f, 0.0f},
                      .distance = 1.0f,
-                     .intensity = mx_vec4_scale((mx_vec4){1.0f, 1.0f, 1.0f, 1.0f}, 50.0f),
+                     .intensity = mx_vec4_scale((mx_vec4){1.0f, 1.0f, 1.0f, 1.0f}, 100000.0f),
                  });
 
     //static mgfx_scene sponza_scene = { 0 };
     //LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza_scene);
     //mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
-    
 
-    //static mgfx_scene sponza_scene = { 0 };
-    //load_scene_from_path("C:/Users/ADMIN/Downloads/steamboat.gltf", gltf_loader_flag_default, &sponza_scene);
-    //mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
-
+    static mgfx_scene steam_boat_scene = { 0 };
+    load_scene_from_path("C:/Users/ADMIN/Downloads/steamboat.gltf", gltf_loader_flag_default, &steam_boat_scene);
+    mx_actor steam_boat = actor_spawn_from_gltf(&steam_boat_scene, pbr_ph);
+    const position* bot_pos = mx_actor_set(steam_boat, position, { .y = 0.0f, .x = 10.0f });
 
     static mgfx_scene damaged_helmet_scene = { 0 };
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &damaged_helmet_scene);
     mx_actor damaged_helmet = actor_spawn_from_gltf(&damaged_helmet_scene, pbr_ph);
     position* damaged_helmet_pos = mx_actor_find(damaged_helmet, position);
-    *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 5.0f,
-    0.0f});
+    *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){-10.0f, 5.0f, 0.0f});
     
     static mgfx_scene trees_scene = { 0 };
     load_scene_from_path("C:/Users/ADMIN/Downloads/trees02.gltf",
@@ -592,16 +598,26 @@ void mgfx_example_update() {
         while (mx_iter_next(&iter)) {
             mx_actor actor = iter.actor;
 
-            position* p = mx_actor_find(actor, position);
-            rotation* r = mx_actor_find(actor, rotation);
-            scale* s = mx_actor_find(actor, scale);
+            const position* p = mx_actor_find(actor, position);
+            const rotation* r = mx_actor_find(actor, rotation);
+            const scale* s = mx_actor_find(actor, scale);
 
-            transform* t = mx_actor_find(actor, transform);
-            t->matrix = mx_mat4_mul(mx_translate(*p), mx_mat4_mul(mx_quat_mat4(*r), mx_scale(*s)));
+            transform* local_transform = mx_actor_find(actor, transform);
+            local_transform->matrix = mx_mat4_mul(mx_translate(*p), mx_mat4_mul(mx_quat_mat4(*r), mx_scale(*s)));
+
+            const transform* parent_transform = NULL;
+            if (local_transform->parent.id != MX_INVALID_ACTOR_ID) {
+                parent_transform = mx_actor_find(local_transform->parent, transform);
+            }
+
+            mx_mat4 global_transform_mtx = local_transform->matrix;
+            if (parent_transform) {
+                global_transform_mtx = mx_mat4_mul(parent_transform->matrix, local_transform->matrix);
+            }
 
             static_mesh_renderer* sm = mx_actor_find(actor, static_mesh_renderer);
             if (sm) {
-                sm->transfom_matrix = t->matrix;
+                sm->transfom_matrix = global_transform_mtx;
             }
         }
     }
