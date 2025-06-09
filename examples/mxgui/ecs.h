@@ -54,7 +54,7 @@ MX_API void component_declare_impl(mx_component_id id, mx_component_container* c
             .index_to_actor = MX_DARRAY_CREATE(mx_actor, MX_DEFAULT_ALLOCATOR),          \
             .darray = (uint8_t*)MX_DARRAY_CREATE(type, MX_DEFAULT_ALLOCATOR)});
 
-MX_API MX_NO_DISCARD void*
+MX_API void*
 mx_actor_set_impl(mx_actor actor, mx_component_id id, void* data);
 #define mx_actor_set(actor_id, type, ...)                                                \
     (type*)mx_actor_set_impl(actor_id, component_id_from_type(type), &(type)__VA_ARGS__)

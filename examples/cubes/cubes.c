@@ -1,7 +1,5 @@
 #include "ex_common.h"
-#include "mgfx/defines.h"
 
-#include <math.h>
 #include <mx/mx_log.h>
 #include <mx/mx_math.h>
 #include <mx/mx_math_mtx.h>

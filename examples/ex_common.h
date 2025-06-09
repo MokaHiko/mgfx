@@ -66,5 +66,4 @@ MX_API void mgfx_gizmo_draw_cube(const float* view,
                                  const mx_vec3 position,
                                  const mx_quat rotation,
                                  const mx_vec3 scale);
-
 #endif

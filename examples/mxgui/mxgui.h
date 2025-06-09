@@ -191,7 +191,7 @@ static int mxgui_sort_draws(const void* a, const void* b) {
     return draw_a->container - draw_b->container;
 }
 
-MX_API static void mxgui_render() {
+MX_API static inline void mxgui_render() {
     const mxgui_draw_command* commands;
     uint32_t draw_count = mxgui_get_draw_commands(&commands);
 

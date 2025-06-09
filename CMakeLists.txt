@@ -9,6 +9,7 @@ set(MGFX_BUILD_EXAMPLES ON CACHE BOOL "Build examples.")
 
 find_package(Vulkan REQUIRED)
 add_subdirectory(third_party/vma)
+add_subdirectory(third_party/cJson)
 
 if(MGFX_BUILD_SHARED_LIBS)
     add_library(mgfx SHARED src/mgfx.c src/renderer_vk.c third_party/spirv_reflect/spirv_reflect.c)

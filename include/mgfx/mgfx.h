@@ -46,6 +46,7 @@ extern "C" { // Ensure C++ linkage compatibility
 typedef MX_API struct {
     char name[256];
     void* nwh;
+    int width, height;
 } mgfx_init_info;
 
 /**

@@ -1,5 +1,6 @@
 #include "ex_common.h"
 
+#include "mgfx/defines.h"
 #include "mx/mx_log.h"
 
 #include <mx/mx_asserts.h>
@@ -10,9 +11,6 @@
 #include <mgfx/mgfx.h>
 
 #include <GLFW/glfw3.h>
-
-#include <vulkan/vulkan_core.h>
-
 #include "stb_image.h"
 
 GLFWwindow* s_window = NULL;
@@ -52,13 +50,138 @@ float mgfx_get_axis(mgfx_input_axis axis) {
     }
 }
 
-typedef struct vertex {
+typedef struct my_vertex {
     float position[3];
-    float uv_x;
     float normal[3];
-    float uv_y;
+    float uv[2];
     float color[4];
-} vertex;
+} my_vertex;
+
+static my_vertex k_cube_vertices[] = {
+    // Front face
+    {{-0.5f, -0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {0.0f, 1.0f},
+     {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {1.0f, 1.0f},
+     {0.0f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, 0.5f},
+     {0.0f, 0.0f, 1.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+
+    // Back face
+    {{0.5f, -0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 1.0f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {0.0f, 1.0f},
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {1.0f, 1.0f},
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, -0.5f},
+     {0.0f, 0.0f, -1.0f},
+     {1.0f, 0.0f},
+     {0.5f, 0.5f, 0.5f, 1.0f}}, // Top-left
+
+    // Left face
+    {{-0.5f, -0.5f, -0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{-0.5f, -0.5f, 0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{-0.5f, 0.5f, 0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.0f, 0.5f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     {-1.0f, 0.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
+
+    // Right face
+    {{0.5f, -0.5f, 0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
+    {{0.5f, 0.5f, -0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
+    {{0.5f, 0.5f, 0.5f},
+     {1.0f, 0.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-left
+
+    // Top face
+    {{-0.5f, 0.5f, 0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, 0.5f, 0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 1.0f, 0.5f, 1.0f}}, // Bottom-right
+    {{0.5f, 0.5f, -0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {1.0f, 1.0f},
+     {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
+    {{-0.5f, 0.5f, -0.5f},
+     {0.0f, 1.0f, 0.0f},
+     {1.0f, 0.0f},
+     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
+
+    // Bottom face
+    {{-0.5f, -0.5f, -0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {0.0f, 0.0f},
+     {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
+    {{0.5f, -0.5f, -0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {0.0f, 1.0f},
+     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
+    {{0.5f, -0.5f, 0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {1.0f, 1.0f},
+     {1.0f, 0.0f, 0.5f, 1.0f}}, // Top-right
+    {{-0.5f, -0.5f, 0.5f},
+     {0.0f, -1.0f, 0.0f},
+     {1.0f, 0.0f},
+     {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
+};
+static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(my_vertex);
+
+static uint32_t k_cube_indices[] = {
+    0,  1,  2,  0,  2,  3,
+
+    4,  5,  6,  4,  6,  7,
+
+    8,  9,  10, 8,  10, 11,
+
+    12, 13, 14, 12, 14, 15,
+
+    16, 17, 18, 16, 18, 19,
+
+    20, 21, 22, 20, 22, 23,
+};
+static const size_t k_cube_index_count = sizeof(k_cube_indices) / sizeof(uint32_t);
 
 mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format) {
     int width, height, channel_count;
@@ -81,7 +204,7 @@ mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format) {
         .cube_map = MX_FALSE,
     };
 
-    mgfx_th th = mgfx_texture_create_from_memory(&info, VK_FILTER_LINEAR, data, size);
+    mgfx_th th = mgfx_texture_create_from_memory(&info, MGFX_FILTER_LINEAR, data, size);
 
     stbi_image_free(data);
     return th;
@@ -217,13 +340,22 @@ int mgfx_example_app() {
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    s_window = glfwCreateWindow(APP_WIDTH * (1.0f/1.5f), APP_HEIGHT * (1.0f/1.5f), "Examples", NULL, NULL);
+    s_window = glfwCreateWindow(APP_WIDTH * (1.0f / 1.5f),
+                                APP_HEIGHT * (1.0f / 1.5f),
+                                "Examples",
+                                NULL,
+                                NULL);
 
     glfwSetFramebufferSizeCallback(s_window, window_resize_callback);
     glfwSetKeyCallback(s_window, key_callback);
     glfwSetCursorPosCallback(s_window, mouse_callback);
 
-    mgfx_init_info mgfx_info = {"Clear Screen", s_window};
+    mgfx_init_info mgfx_info = {
+        .name = "Clear Screen",
+        .nwh = s_window,
+        .width = APP_WIDTH,
+        .height = APP_HEIGHT,
+    };
 
     if (mgfx_init(&mgfx_info) != 0) {
         return -1;
@@ -232,7 +364,7 @@ int mgfx_example_app() {
     camera_create(mgfx_camera_type_perspective, &g_example_camera);
 
     const mgfx_image_info texture_info = {
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .format = MGFX_FORMAT_R8G8B8A8_UNORM,
         .width = 1,
         .height = 1,
         .layers = 1,
@@ -241,28 +373,34 @@ int mgfx_example_app() {
 
     uint8_t default_white_data[] = {255, 255, 255, 255};
     s_default_white = mgfx_texture_create_from_memory(&texture_info,
-                                                      VK_FILTER_NEAREST,
+                                                      MGFX_FILTER_LINEAR,
                                                       default_white_data,
                                                       4);
 
     uint8_t default_black_data[] = {0, 0, 0, 0};
     s_default_black = mgfx_texture_create_from_memory(&texture_info,
-                                                      VK_FILTER_NEAREST,
+                                                      MGFX_FILTER_LINEAR,
                                                       default_black_data,
                                                       4);
 
     uint8_t default_normal_data[] = {128, 128, 255, 255};
     s_default_normal_map = mgfx_texture_create_from_memory(&texture_info,
-                                                           VK_FILTER_NEAREST,
+                                                           MGFX_FILTER_LINEAR,
                                                            default_normal_data,
                                                            4);
 
     // Init gizmos
     mgfx_vertex_layout gizmo_vl = {0};
-    //MGFX_DEFAULT_CUBE_VBH =
-    //    mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
-    //MGFX_DEFAULT_CUBE_IBH =
-    //    mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
+    mgfx_vertex_layout_begin(&gizmo_vl);
+    mgfx_vertex_layout_add(&gizmo_vl, MGFX_VERTEX_ATTRIBUTE_POSITION, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&gizmo_vl, MGFX_VERTEX_ATTRIBUTE_NORMAL, sizeof(float) * 3);
+    mgfx_vertex_layout_add(&gizmo_vl, MGFX_VERTEX_ATTRIBUTE_TEXCOORD0, sizeof(float) * 2);
+    mgfx_vertex_layout_add(&gizmo_vl, MGFX_VERTEX_ATTRIBUTE_COLOR, sizeof(float) * 4);
+    mgfx_vertex_layout_end(&gizmo_vl);
+    MGFX_DEFAULT_CUBE_VBH =
+        mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
+    MGFX_DEFAULT_CUBE_IBH =
+        mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
     MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.frag.glsl.spv");

@@ -83,7 +83,9 @@ mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
     mx_actor_set_impl(out, component_id_from_type(position), &MX_VEC3_ONE);
     mx_actor_set_impl(out, component_id_from_type(rotation), &MX_QUAT_IDENTITY);
     mx_actor_set_impl(out, component_id_from_type(scale), &MX_VEC3_ONE);
-    mx_actor_set(out, transform, {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
+    mx_actor_set(out,
+                 transform,
+                 {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
 
     for (uint32_t n = 0; n < gltf->node_count; n++) {
         if (gltf->nodes[n].mesh == NULL) {
@@ -101,24 +103,24 @@ mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
 
             mx_actor node = mx_actor_spawn({.parent = out});
 
-            mx_actor_set_impl(node, component_id_from_type(position), &gltf->nodes[n].position);
+            mx_actor_set_impl(node,
+                              component_id_from_type(position),
+                              &gltf->nodes[n].position);
             mx_actor_set_impl(node, component_id_from_type(scale), &gltf->nodes[n].scale);
-            mx_actor_set_impl(node, component_id_from_type(rotation), &gltf->nodes[n].rotation);
+            mx_actor_set_impl(node,
+                              component_id_from_type(rotation),
+                              &gltf->nodes[n].rotation);
 
-            // TODO: Parent
-            mx_actor_set(node, transform, {
-                .matrix = MX_MAT4_IDENTITY,
-                .parent = out
-            });
+            mx_actor_set(node, transform, {.matrix = MX_MAT4_IDENTITY, .parent = out});
 
             static_mesh_renderer* mesh_renderer =
                 mx_actor_set(node,
-                    static_mesh_renderer,
-                    {
-                        .vbh = node_primitive->vbh,
-                        .ibh = node_primitive->ibh,
-                        .ph = ph,
-                    });
+                             static_mesh_renderer,
+                             {
+                                 .vbh = node_primitive->vbh,
+                                 .ibh = node_primitive->ibh,
+                                 .ph = ph,
+                             });
 
             mesh_renderer->u_properties = node_primitive->material->u_properties_buffer;
 
@@ -295,7 +297,8 @@ void mgfx_example_init() {
     quad_vbh = mgfx_vertex_buffer_create(MGFX_FS_QUAD_VERTICES,
                                          sizeof(MGFX_FS_QUAD_VERTICES),
                                          &MGFX_PNTU32F_LAYOUT);
-    quad_ibh = mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
+    quad_ibh =
+        mgfx_index_buffer_create(MGFX_FS_QUAD_INDICES, sizeof(MGFX_FS_QUAD_INDICES));
 
     point_lights_buffer = mgfx_storage_buffer_create(&point_lights, sizeof(point_lights));
     u_point_lights = mgfx_descriptor_create_and_set_storage_buffer("point_lights",
@@ -560,35 +563,68 @@ void mgfx_example_init() {
     mx_actor_set(sun_light, position, {0, 10, 0});
     mx_actor_set(sun_light, rotation, {0, 0, 0});
     mx_actor_set(sun_light, scale, {1, 1, 1});
-    mx_actor_set(sun_light, transform, {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
     mx_actor_set(sun_light,
-                 directional_light,
-                 {
-                     .direction = {1.0f, -1.0f, 0.0f},
-                     .distance = 1.0f,
-                     .intensity = mx_vec4_scale((mx_vec4){1.0f, 1.0f, 1.0f, 1.0f}, 100000.0f),
-                 });
+                 transform,
+                 {.parent = MX_INVALID_ACTOR_ID, .matrix = MX_MAT4_IDENTITY});
+    mx_actor_set(
+        sun_light,
+        directional_light,
+        {
+            .direction = {1.0f, -1.0f, 0.0f},
+            .distance = 1.0f,
+            .intensity = mx_vec4_scale((mx_vec4){1.0f, 1.0f, 1.0f, 1.0f}, 100000.0f),
+        });
 
-    //static mgfx_scene sponza_scene = { 0 };
-    //LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza_scene);
-    //mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
+    // static mgfx_scene sponza_scene = { 0 };
+    // LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza_scene);
+    // mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
 
-    static mgfx_scene steam_boat_scene = { 0 };
-    load_scene_from_path("C:/Users/ADMIN/Downloads/steamboat.gltf", gltf_loader_flag_default, &steam_boat_scene);
-    mx_actor steam_boat = actor_spawn_from_gltf(&steam_boat_scene, pbr_ph);
-    const position* bot_pos = mx_actor_set(steam_boat, position, { .y = 0.0f, .x = 10.0f });
+    // static mgfx_scene steam_boat_scene = { 0 };
+    // load_scene_from_path("C:/Users/ADMIN/Downloads/steamboat.gltf",
+    // gltf_loader_flag_default, &steam_boat_scene); mx_actor steam_boat =
+    // actor_spawn_from_gltf(&steam_boat_scene, pbr_ph); const position* bot_pos =
+    // mx_actor_set(steam_boat, position, { .y = 0.0f, .x = 10.0f });
 
-    static mgfx_scene damaged_helmet_scene = { 0 };
+    static mgfx_scene damaged_helmet_scene = {0};
     LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &damaged_helmet_scene);
     mx_actor damaged_helmet = actor_spawn_from_gltf(&damaged_helmet_scene, pbr_ph);
     position* damaged_helmet_pos = mx_actor_find(damaged_helmet, position);
-    *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){-10.0f, 5.0f, 0.0f});
-    
-    static mgfx_scene trees_scene = { 0 };
-    load_scene_from_path("C:/Users/ADMIN/Downloads/trees02.gltf",
-                         gltf_loader_flag_default,
-                         &trees_scene);
-    actor_spawn_from_gltf(&trees_scene, pbr_ph);
+    *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 1.0f, 0.0f});
+
+    // static mgfx_scene trees_scene = { 0 };
+    // load_scene_from_path("C:/Users/ADMIN/Downloads/trees02.gltf",
+    //                      gltf_loader_flag_default,
+    //                      &trees_scene);
+    // actor_spawn_from_gltf(&trees_scene, pbr_ph);
+}
+
+void editor_draw() {
+    int n_elements = 3;
+    mxgui_begin("nice");
+    mxgui_image(
+        forward_pass.pass_uniforms[FORWARD_PASS_DIRECTIONAL_LIGHT_SHADOW_MAP_UNIFORM]
+            .uh.idx,
+        &(mxgui_image_info){
+            .width = APP_WIDTH / n_elements,
+            .height = APP_HEIGHT / n_elements,
+        });
+
+    mxgui_image(
+        forward_pass.pass_uniforms[FORWARD_PASS_DIRECTIONAL_LIGHT_SHADOW_MAP_UNIFORM]
+            .uh.idx,
+        &(mxgui_image_info){
+            .width = APP_WIDTH / n_elements,
+            .height = APP_HEIGHT / n_elements,
+        });
+
+    mxgui_image(
+        forward_pass.pass_uniforms[FORWARD_PASS_DIRECTIONAL_LIGHT_SHADOW_MAP_UNIFORM]
+            .uh.idx,
+        &(mxgui_image_info){
+            .width = APP_WIDTH / n_elements,
+            .height = APP_HEIGHT / n_elements,
+        });
+    mxgui_end();
 }
 
 void mgfx_example_update() {
@@ -603,7 +639,9 @@ void mgfx_example_update() {
             const scale* s = mx_actor_find(actor, scale);
 
             transform* local_transform = mx_actor_find(actor, transform);
-            local_transform->matrix = mx_mat4_mul(mx_translate(*p), mx_mat4_mul(mx_quat_mat4(*r), mx_scale(*s)));
+            local_transform->matrix =
+                mx_mat4_mul(mx_translate(*p),
+                            mx_mat4_mul(mx_quat_mat4(*r), mx_scale(*s)));
 
             const transform* parent_transform = NULL;
             if (local_transform->parent.id != MX_INVALID_ACTOR_ID) {
@@ -612,7 +650,8 @@ void mgfx_example_update() {
 
             mx_mat4 global_transform_mtx = local_transform->matrix;
             if (parent_transform) {
-                global_transform_mtx = mx_mat4_mul(parent_transform->matrix, local_transform->matrix);
+                global_transform_mtx =
+                    mx_mat4_mul(parent_transform->matrix, local_transform->matrix);
             }
 
             static_mesh_renderer* sm = mx_actor_find(actor, static_mesh_renderer);
@@ -729,8 +768,8 @@ void mgfx_example_update() {
         mx_darray_t(static_mesh_renderer) sms = mx_query_view(static_mesh_renderer);
 
         for (size_t i = 0; i < MX_DARRAY_COUNT(&sms); i++) {
-			mgfx_set_proj(g_example_camera.proj.val);
-			mgfx_set_view(g_example_camera.view.val);
+            mgfx_set_proj(g_example_camera.proj.val);
+            mgfx_set_view(g_example_camera.view.val);
 
             if (render_pass_bind_descriptors(&forward_pass)) {
                 mgfx_set_transform(sms[i].transfom_matrix.val);
@@ -768,6 +807,9 @@ void mgfx_example_update() {
         mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, post_process_resolve_pass.ph);
         blit_pass_end(&post_process_resolve_pass);
     }
+
+    editor_draw();
+    mxgui_render();
 }
 
 void mgfx_example_shutdown() {

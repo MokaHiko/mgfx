@@ -56,7 +56,6 @@ FOut fragmentMain(VOut input) {
     float3 wo = normalize(scene.camera_position - input.sg.frag_position);
 
     float3 lo = 0;
-
     lo += dirLight.illuminate(sg, brdf, wo);
 
     for (int i = 0; i < scene.point_light_count; i++) {

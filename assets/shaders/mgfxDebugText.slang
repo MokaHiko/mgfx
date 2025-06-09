@@ -10,7 +10,7 @@ struct VOut
 VOut vertexMain(mgfx::Vertex input)
 {
     VOut output;
-    float4x4 mvp = mul(mgfx::u.proj, mul(mgfx::u.view, mgfx::u.model));
+    float4x4 mvp = mul(mgfx::view_proj(), mgfx::transform());
     output.position = mul(mvp, float4(input.position, 1.0));
     output.uv = input.uv;
     return output;

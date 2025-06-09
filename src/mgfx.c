@@ -1489,6 +1489,9 @@ size_t mgfx_format_size(mgfx_format format) {
 int mgfx_init(const mgfx_init_info *info) {
   mx_allocator_t tmp = mx_arena_create(MX_MB);
 
+  s_width = info->width;
+  s_height = info->height;
+
   VkApplicationInfo app_info = {0};
   app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
   app_info.pNext = NULL;
@@ -1503,7 +1506,7 @@ int mgfx_init(const mgfx_init_info *info) {
 #ifdef MX_WIN32
   app_info.apiVersion = VK_API_VERSION_1_3;
 #else
-  app_info.apiVersion = VK_API_VERSION_1_2;
+  app_info.apiVersion = VK_API_VERSION_1_3;
 #endif
 
   VkInstanceCreateInfo instance_info = {0};
@@ -3179,9 +3182,6 @@ void mgfx_debug_draw_text(int32_t x, int32_t y, const char *fmt, ...) {
   }
 
   // Typical ortho
-  // TODOL: Get from application
-  s_width = 1280;
-  s_height = 720;
   const real_t right = (real_t)s_width;
   const real_t top = (real_t)s_height;
   mgfx_set_proj(mx_ortho(0.0f, right, 0.0, top, -100.0f, 100.0f).val);
