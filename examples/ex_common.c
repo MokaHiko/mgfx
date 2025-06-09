@@ -60,187 +60,6 @@ typedef struct vertex {
     float color[4];
 } vertex;
 
-static mgfx_pntuc32f k_cube_vertices[] = {
-    // Front face
-    {{-0.5f, -0.5f, 0.5f},
-     0.0f,
-     {0.0f, 0.0f, 1.0f},
-     0.0f,
-     {1.0f, 0.0f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, 0.5f},
-     1.0f,
-     {0.0f, 0.0f, 1.0f},
-     0.0f,
-     {0.0f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, 0.5f, 0.5f},
-     1.0f,
-     {0.0f, 0.0f, 1.0f},
-     1.0f,
-     {0.0f, 0.0f, 1.0f, 1.0f}}, // Top-right
-    {{-0.5f, 0.5f, 0.5f},
-     0.0f,
-     {0.0f, 0.0f, 1.0f},
-     1.0f,
-     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
-
-    // Back face
-    {{0.5f, -0.5f, -0.5f},
-     0.0f,
-     {0.0f, 0.0f, -1.0f},
-     0.0f,
-     {1.0f, 0.0f, 1.0f, 1.0f}}, // Bottom-left
-    {{-0.5f, -0.5f, -0.5f},
-     1.0f,
-     {0.0f, 0.0f, -1.0f},
-     0.0f,
-     {0.0f, 1.0f, 1.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, -0.5f},
-     1.0f,
-     {0.0f, 0.0f, -1.0f},
-     1.0f,
-     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, -0.5f},
-     0.0f,
-     {0.0f, 0.0f, -1.0f},
-     1.0f,
-     {0.5f, 0.5f, 0.5f, 1.0f}}, // Top-left
-
-    // Left face
-    {{-0.5f, -0.5f, -0.5f},
-     0.0f,
-     {-1.0f, 0.0f, 0.0f},
-     0.0f,
-     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{-0.5f, -0.5f, 0.5f},
-     1.0f,
-     {-1.0f, 0.0f, 0.0f},
-     0.0f,
-     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{-0.5f, 0.5f, 0.5f},
-     1.0f,
-     {-1.0f, 0.0f, 0.0f},
-     1.0f,
-     {0.0f, 0.5f, 1.0f, 1.0f}}, // Top-right
-    {{-0.5f, 0.5f, -0.5f},
-     0.0f,
-     {-1.0f, 0.0f, 0.0f},
-     1.0f,
-     {1.0f, 1.0f, 0.5f, 1.0f}}, // Top-left
-
-    // Right face
-    {{0.5f, -0.5f, 0.5f},
-     0.0f,
-     {1.0f, 0.0f, 0.0f},
-     0.0f,
-     {1.0f, 0.5f, 0.0f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, -0.5f},
-     1.0f,
-     {1.0f, 0.0f, 0.0f},
-     0.0f,
-     {0.5f, 0.5f, 1.0f, 1.0f}}, // Bottom right
-    {{0.5f, 0.5f, -0.5f},
-     1.0f,
-     {1.0f, 0.0f, 0.0f},
-     1.0f,
-     {0.5f, 0.0f, 1.0f, 1.0f}}, // Top-right
-    {{0.5f, 0.5f, 0.5f},
-     0.0f,
-     {1.0f, 0.0f, 0.0f},
-     1.0f,
-     {1.0f, 1.0f, 1.0f, 1.0f}}, // Top-left
-
-    // Top face
-    {{-0.5f, 0.5f, 0.5f},
-     0.0f,
-     {0.0f, 1.0f, 0.0f},
-     0.0f,
-     {1.0f, 0.0f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, 0.5f, 0.5f},
-     1.0f,
-     {0.0f, 1.0f, 0.0f},
-     0.0f,
-     {0.5f, 1.0f, 0.5f, 1.0f}}, // Bottom-right
-    {{0.5f, 0.5f, -0.5f},
-     1.0f,
-     {0.0f, 1.0f, 0.0f},
-     1.0f,
-     {0.0f, 1.0f, 1.0f, 1.0f}}, // Top-right
-    {{-0.5f, 0.5f, -0.5f},
-     0.0f,
-     {0.0f, 1.0f, 0.0f},
-     1.0f,
-     {1.0f, 1.0f, 0.0f, 1.0f}}, // Top-left
-
-    // Bottom face
-    {{-0.5f, -0.5f, -0.5f},
-     0.0f,
-     {0.0f, -1.0f, 0.0f},
-     0.0f,
-     {1.0f, 0.5f, 0.5f, 1.0f}}, // Bottom-left
-    {{0.5f, -0.5f, -0.5f},
-     1.0f,
-     {0.0f, -1.0f, 0.0f},
-     0.0f,
-     {0.5f, 1.0f, 0.0f, 1.0f}}, // Bottom-right
-    {{0.5f, -0.5f, 0.5f},
-     1.0f,
-     {0.0f, -1.0f, 0.0f},
-     1.0f,
-     {1.0f, 0.0f, 0.5f, 1.0f}}, // Top-right
-    {{-0.5f, -0.5f, 0.5f},
-     0.0f,
-     {0.0f, -1.0f, 0.0f},
-     1.0f,
-     {0.5f, 0.5f, 1.0f, 1.0f}}, // Top-left
-};
-static const size_t k_cube_vertex_count = sizeof(k_cube_vertices) / sizeof(mgfx_pntuc32f);
-
-static uint32_t k_cube_indices[] = {
-    // Front face
-    0,
-    1,
-    2,
-    0,
-    2,
-    3,
-    // Back face
-    4,
-    5,
-    6,
-    4,
-    6,
-    7,
-    // Left face
-    8,
-    9,
-    10,
-    8,
-    10,
-    11,
-    // Right face
-    12,
-    13,
-    14,
-    12,
-    14,
-    15,
-    // Top face
-    16,
-    17,
-    18,
-    16,
-    18,
-    19,
-    // Bottom face
-    20,
-    21,
-    22,
-    20,
-    22,
-    23};
-
-static const size_t k_cube_index_count = sizeof(k_cube_indices) / sizeof(uint32_t);
-
 mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format) {
     int width, height, channel_count;
 
@@ -398,7 +217,7 @@ int mgfx_example_app() {
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    s_window = glfwCreateWindow(APP_WIDTH, APP_HEIGHT, "Examples", NULL, NULL);
+    s_window = glfwCreateWindow(APP_WIDTH * (1.0f/1.5f), APP_HEIGHT * (1.0f/1.5f), "Examples", NULL, NULL);
 
     glfwSetFramebufferSizeCallback(s_window, window_resize_callback);
     glfwSetKeyCallback(s_window, key_callback);
@@ -440,10 +259,10 @@ int mgfx_example_app() {
 
     // Init gizmos
     mgfx_vertex_layout gizmo_vl = {0};
-    MGFX_DEFAULT_CUBE_VBH =
-        mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
-    MGFX_DEFAULT_CUBE_IBH =
-        mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
+    //MGFX_DEFAULT_CUBE_VBH =
+    //    mgfx_vertex_buffer_create(k_cube_vertices, sizeof(k_cube_vertices), &gizmo_vl);
+    //MGFX_DEFAULT_CUBE_IBH =
+    //    mgfx_index_buffer_create(k_cube_indices, sizeof(k_cube_indices));
 
     MGFX_GIZMO_VSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.vert.glsl.spv");
     MGFX_GIZMO_FSH = mgfx_shader_create(MGFX_ASSET_PATH "shaders/gizmos.frag.glsl.spv");

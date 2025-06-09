@@ -74,8 +74,10 @@ typedef struct mgfx_mesh {
 enum { MGFX_NODE_MAX_PRIMITIVES = 32 };
 typedef struct mgfx_node {
     // global matrix
-    mx_mat4 matrix;
     const mgfx_mesh* mesh;
+    mx_vec3 position;
+    mx_quat rotation;
+    mx_vec3 scale;
 } mgfx_node;
 
 enum { MGFX_SCENE_MAX_NODES = 128 };

@@ -19,6 +19,7 @@ typedef struct MX_API mxgui_gui_settings {
 
 typedef struct MX_API mxgui_window_info {
     struct {
+        int flags;
     } styles;
 
 } mxgui_window_info;
@@ -86,7 +87,7 @@ typedef struct mxgui_vertex {
 mgfx_vertex_layout mxgui_vl;
 
 static mx_darray_t(mxgui_container) mxgui_containers;
-static mxgui_window_handle mxgui_top = MXGUI_INVALID_CONTAINER_HANDLE;
+static mxgui_window_handle mxgui_top = -1;
 
 static mx_darray_t(mxgui_draw_command) mxgui_draws;
 static mx_darray_t(mxgui_vertex) mxgui_vertices;

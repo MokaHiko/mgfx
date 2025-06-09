@@ -11,7 +11,7 @@
 
 // Scene graph
 typedef mx_vec3 position;
-typedef mx_vec3 rotation;
+typedef mx_quat rotation;
 typedef mx_vec3 scale;
 
 typedef struct transform {
@@ -74,7 +74,7 @@ typedef enum pbr_material_textures {
 } pbr_material_textures;
 
 mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
-    mx_actor out = mx_actor_spawn({.name = "wowxa"});
+    mx_actor out = mx_actor_spawn({.name = "gltf"});
     mx_actor_set(out, position, {0, 0, 0});
     mx_actor_set(out, rotation, {0, 0, 0});
     mx_actor_set(out, scale, {1, 1, 1});
@@ -96,37 +96,21 @@ mx_actor actor_spawn_from_gltf(mgfx_scene* gltf, mgfx_ph ph) {
 
             mx_actor node = mx_actor_spawn({.parent = out});
 
-            // TODO: Make gltf->loader output locals
-            mx_mat4 mtx = gltf->nodes[n].matrix;
+            mx_actor_set_impl(node, component_id_from_type(position), &gltf->nodes[n].position);
+            mx_actor_set_impl(node, component_id_from_type(scale), &gltf->nodes[n].scale);
+            mx_actor_set_impl(node, component_id_from_type(rotation), &gltf->nodes[n].rotation);
 
-            mx_actor_set(node,
-                         position,
-                         {
-                             .x = mtx.columns[3].x,
-                             .y = mtx.columns[3].y,
-                             .z = mtx.columns[3].z,
-                         });
+            // TODO: Parent
+            mx_actor_set(node, transform, {.matrix = MX_MAT4_IDENTITY});
 
-            scale* s = mx_actor_set(node,
-                                    scale,
-                                    {
-                                        .x = mx_vec3_len(mtx.columns[0].xyz),
-                                        .y = mx_vec3_len(mtx.columns[1].xyz),
-                                        .z = mx_vec3_len(mtx.columns[2].xyz),
-                                    });
-
-            mx_actor_set(node, rotation, {0, 0, 0});
-
-            const transform* t = mx_actor_set(node, transform, {.matrix = mtx});
             static_mesh_renderer* mesh_renderer =
                 mx_actor_set(node,
-                             static_mesh_renderer,
-                             {
-                                 .vbh = node_primitive->vbh,
-                                 .ibh = node_primitive->ibh,
-                                 .ph = ph,
-                                 .transfom_matrix = mtx,
-                             });
+                    static_mesh_renderer,
+                    {
+                        .vbh = node_primitive->vbh,
+                        .ibh = node_primitive->ibh,
+                        .ph = ph,
+                    });
 
             mesh_renderer->u_properties = node_primitive->material->u_properties_buffer;
 
@@ -331,7 +315,7 @@ void mgfx_example_init() {
         .fbh = mgfx_framebuffer_create(NULL, 0, shadow_pass_depth_attachment)};
 
     shadow_ph = mgfx_program_create_graphics(mgfx_shader_create("shadow.vert.spv"),
-                                             (mgfx_sh){},
+                                             (mgfx_sh){0},
                                              {
                                                  .name = "shadow_program",
                                                  .cull_mode = MGFX_CULL_FRONT,
@@ -427,14 +411,14 @@ void mgfx_example_init() {
     } blur_settings;
 
     blur_settings horiz = {
-        .weights = {0.1945946, 0.1216216, 0.054054, 0.016216},
-        .base = 0.227027,
+        .weights = {0.1945946f, 0.1216216f, 0.054054f, 0.016216f},
+        .base = 0.227027f,
         .horizontal = MX_TRUE,
     };
 
     blur_settings vert = {
-        .weights = {0.1945946, 0.1216216, 0.054054, 0.016216},
-        .base = 0.227027,
+        .weights = {0.1945946f, 0.1216216f, 0.054054f, 0.016216f},
+        .base = 0.227027f,
         .horizontal = MX_FALSE,
     };
 
@@ -574,28 +558,28 @@ void mgfx_example_init() {
                  {
                      .direction = {1.0f, -1.0f, 0.0f},
                      .distance = 1.0f,
-                     .intensity = {1.0f, 1.0f, 1.0f, 1.0f},
+                     .intensity = mx_vec4_scale((mx_vec4){1.0f, 1.0f, 1.0f, 1.0f}, 50.0f),
                  });
 
-    // Make gltf an asset
-    // mgfx_scene boat_scene;
-    // load_scene_from_path("/Users/christianmarkg.solon/Downloads/steamboat2.gltf",
-    //                      gltf_loader_flag_default,
-    //                      &boat_scene);
-    // actor_spawn_from_gltf(&boat_scene, pbr_ph);
+    //static mgfx_scene sponza_scene = { 0 };
+    //LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza_scene);
+    //mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
+    
 
-    // LOAD_GLTF_MODEL("Sponza", gltf_loader_flag_default, &sponza_scene);
-    // mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
+    //static mgfx_scene sponza_scene = { 0 };
+    //load_scene_from_path("C:/Users/ADMIN/Downloads/steamboat.gltf", gltf_loader_flag_default, &sponza_scene);
+    //mx_actor sponza = actor_spawn_from_gltf(&sponza_scene, pbr_ph);
 
-    // mgfx_scene damaged_helmet_scene;
-    // LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &damaged_helmet_scene);
-    // mx_actor damaged_helmet = actor_spawn_from_gltf(&damaged_helmet_scene, pbr_ph);
-    // position* damaged_helmet_pos = mx_actor_find(damaged_helmet, position);
-    // *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 1.5f,
-    // 0.0f});
 
-    mgfx_scene trees_scene;
-    load_scene_from_path("/Users/christianmarkg.solon/Downloads/trees02/trees02.gltf",
+    static mgfx_scene damaged_helmet_scene = { 0 };
+    LOAD_GLTF_MODEL("DamagedHelmet", gltf_loader_flag_default, &damaged_helmet_scene);
+    mx_actor damaged_helmet = actor_spawn_from_gltf(&damaged_helmet_scene, pbr_ph);
+    position* damaged_helmet_pos = mx_actor_find(damaged_helmet, position);
+    *damaged_helmet_pos = mx_vec3_add(*damaged_helmet_pos, (mx_vec3){0.0f, 5.0f,
+    0.0f});
+    
+    static mgfx_scene trees_scene = { 0 };
+    load_scene_from_path("C:/Users/ADMIN/Downloads/trees02.gltf",
                          gltf_loader_flag_default,
                          &trees_scene);
     actor_spawn_from_gltf(&trees_scene, pbr_ph);
@@ -613,10 +597,9 @@ void mgfx_example_update() {
             scale* s = mx_actor_find(actor, scale);
 
             transform* t = mx_actor_find(actor, transform);
+            t->matrix = mx_mat4_mul(mx_translate(*p), mx_mat4_mul(mx_quat_mat4(*r), mx_scale(*s)));
 
-            t->matrix = mx_mat4_mul(mx_translate(*p), mx_scale(*s));
             static_mesh_renderer* sm = mx_actor_find(actor, static_mesh_renderer);
-
             if (sm) {
                 sm->transfom_matrix = t->matrix;
             }
@@ -727,11 +710,12 @@ void mgfx_example_update() {
 
     // ----- Forward pass -----
     if (render_pass_begin(&forward_pass) == MX_SUCCESS) {
-        mgfx_set_proj(g_example_camera.proj.val);
-        mgfx_set_view(g_example_camera.view.val);
-
         mx_darray_t(static_mesh_renderer) sms = mx_query_view(static_mesh_renderer);
+
         for (size_t i = 0; i < MX_DARRAY_COUNT(&sms); i++) {
+			mgfx_set_proj(g_example_camera.proj.val);
+			mgfx_set_view(g_example_camera.view.val);
+
             if (render_pass_bind_descriptors(&forward_pass)) {
                 mgfx_set_transform(sms[i].transfom_matrix.val);
 
@@ -756,6 +740,7 @@ void mgfx_example_update() {
     // Blur pass
     for (uint32_t i = 0; i < BLUR_PASS_COUNT; i++) {
         if (blit_pass_begin(&blur_pingpong_pass[i]) == MX_SUCCESS) {
+            mgfx_set_transform(MX_MAT4_IDENTITY.val);
             mgfx_submit(BLUR_0_FRAME_TARGET + i, blur_pingpong_pass[i].ph);
             blit_pass_end(&blur_pingpong_pass[i]);
         }
@@ -763,6 +748,7 @@ void mgfx_example_update() {
 
     // ----- HDR, Gamma correction, Post Process Resolution -----
     if (blit_pass_begin(&post_process_resolve_pass) == MX_SUCCESS) {
+        mgfx_set_transform(MX_MAT4_IDENTITY.val);
         mgfx_submit(MGFX_DEFAULT_VIEW_TARGET, post_process_resolve_pass.ph);
         blit_pass_end(&post_process_resolve_pass);
     }

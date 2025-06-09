@@ -5,8 +5,8 @@
 #include <mx/mx_math_types.h>
 #include <mx/mx_math_mtx.h>
 
-#define APP_WIDTH  1280
-#define APP_HEIGHT 720
+#define APP_WIDTH  2560
+#define APP_HEIGHT 1440
 
 typedef enum mgfx_camera_type {
     mgfx_camera_type_perspective = 0,
@@ -55,8 +55,6 @@ typedef enum mgfx_input_axis {
 
 MX_API mx_bool mgfx_get_key(int key_code);
 MX_API float mgfx_get_axis(mgfx_input_axis axis);
-
-void log_mat4(const mx_mat4 mat);
 
 extern void mgfx_example_init();
 extern void mgfx_example_update();

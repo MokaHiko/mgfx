@@ -98,7 +98,6 @@ static void mikk_set_tspace_basic(const SMikkTSpaceContext* ctx,
 }
 
 static void gltf_process_node(const cgltf_data* gltf,
-                              mx_mat4 parent_mtx,
                               mgfx_scene* scene,
                               cgltf_node* node) {
     if (!node) {
@@ -112,37 +111,50 @@ static void gltf_process_node(const cgltf_data* gltf,
     if (node->has_matrix) {
         memcpy(local.val, node->matrix, sizeof(mx_mat4));
     } else {
-        mx_mat4 translate = mx_translate((mx_vec3){
-            .x = node->translation[0],
-            .y = node->translation[1],
-            .z = node->translation[2],
-        });
+        mx_mat4 translate = MX_MAT4_IDENTITY;
+        if (node->has_translation) {
+            scene_node->position = (mx_vec3) {
+                .x = node->translation[0],
+                    .y = node->translation[1],
+                    .z = node->translation[2],
+            };
+        }
+        else {
+            scene_node->position = (mx_vec3){ 0 };
+        }
 
-        mx_mat4 rotate = mx_quat_mat4((mx_quat){
-            .x = node->rotation[0],
-            .y = node->rotation[1],
-            .z = node->rotation[2],
-            .w = node->rotation[3],
-        });
+        mx_mat4 rotate = MX_MAT4_IDENTITY;
+        if (node->has_rotation) {
+            scene_node->rotation = (mx_quat){
+                .x = node->rotation[0],
+                .y = node->rotation[1],
+                .z = node->rotation[2],
+                .w = node->rotation[3],
+            };
+        }
+        else {
+            scene_node->rotation = MX_QUAT_IDENTITY;
+        }
 
-        mx_mat4 scale = mx_scale((mx_vec3){
-            .x = node->scale[0],
-            .y = node->scale[1],
-            .z = node->scale[2],
-        });
-
-        local = mx_mat4_mul(mx_mat4_mul(translate, rotate), scale);
+        mx_mat4 scale = MX_MAT4_IDENTITY;
+        if (node->has_scale) {
+			scene_node->scale = (mx_vec3){
+				.x = node->scale[0],
+				.y = node->scale[1],
+				.z = node->scale[2],
+			};
+        }
+        else {
+            scene_node->scale = MX_VEC3_ONE;
+        }
     }
-
-    // Calculate global
-    scene_node->matrix = mx_mat4_mul(parent_mtx, local);
 
     if (node->mesh) {
         scene_node->mesh = &scene->meshes[node->mesh - gltf->meshes];
     };
 
     for (size_t child_idx = 0; child_idx < node->children_count; child_idx++) {
-        gltf_process_node(gltf, scene_node->matrix, scene, node->children[child_idx]);
+        gltf_process_node(gltf, scene, node->children[child_idx]);
     }
 };
 
@@ -246,7 +258,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
+                                                          VK_FORMAT_R8G8B8A8_UNORM);
                     }
 
                     scene->materials[i].metallic_roughness_texture =
@@ -266,7 +278,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
+                                                          VK_FORMAT_R8G8B8A8_UNORM);
                     }
 
                     scene->materials[i].normal_texture = scene->textures[tex_idx];
@@ -285,7 +297,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
                         scene->textures[tex_idx] =
                             mgfx_texture_create_from_path(absolute_path,
-                                                          MGFX_FORMAT_R8G8B8A8_SRGB);
+                                                          VK_FORMAT_R8G8B8A8_UNORM);
                     }
 
                     scene->materials[i].occlusion_texture = scene->textures[tex_idx];
@@ -394,7 +406,9 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
                     has_color = MX_TRUE;
                     break;
                 case cgltf_attribute_type_position:
+                    break;
                 case cgltf_attribute_type_texcoord:
+                    break;
                 case cgltf_attribute_type_joints:
                 case cgltf_attribute_type_weights:
                 case cgltf_attribute_type_custom:
@@ -517,7 +531,7 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
     mx_mat4 identity = MX_MAT4_IDENTITY;
     for (size_t root_idx = 0; root_idx < cgltf_scene->nodes_count; root_idx++) {
-        gltf_process_node(data, identity, scene, cgltf_scene->nodes[root_idx]);
+        gltf_process_node(data, scene, cgltf_scene->nodes[root_idx]);
     };
 
     if ((flags & gltf_loader_flag_materials) == gltf_loader_flag_materials) {
@@ -561,7 +575,6 @@ void load_scene_from_path(const char* path, gltf_loader_flags flags, mgfx_scene*
 
     cgltf_free(data);
 
-    // TODO: Arena Reset
     mx_arena_destroy(tmp);
 };
 

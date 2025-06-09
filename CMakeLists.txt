@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(MGFX_BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries.")
-set(MGFX_BUILD_EXAMPLES ON CACHE BOOL "Build examples.")
+set(MGFX_BUILD_EXAMPLES OFF CACHE BOOL "Build examples.")
 
 find_package(Vulkan REQUIRED)
 add_subdirectory(third_party/vma)
@@ -27,7 +27,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glfw)
 
 target_link_libraries(mgfx PUBLIC mx vma Vulkan::Vulkan)
-target_compile_options(mgfx PRIVATE -Werror)
 
 target_include_directories(mgfx PUBLIC include)
 target_include_directories(mgfx PUBLIC third_party)
@@ -35,6 +34,7 @@ target_include_directories(mgfx PUBLIC third_party)
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message("-- @warn mgfx uses glfw to get window surfaces on mac!")
     target_link_libraries(mgfx PRIVATE glfw)
+    target_compile_options(mgfx PRIVATE -Werror)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     message("-- @warn mgfx uses glfw to get window surfaces on windows!")
     target_link_libraries(mgfx PRIVATE glfw)

@@ -22,7 +22,7 @@ add_custom_command(
 set(LIT_SHADER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/lit.slang")
 add_custom_command(
     OUTPUT "${SPV_OUTPUT_DIR}/lit.vert.spv"
-    COMMAND ${SLANGC} ${LIT_SHADER_SOURCE} -entry vertexMain -target spirv -profile spirv_1_4 -o "${SPV_OUTPUT_DIR}/lit.vert.spv"
+    COMMAND ${SLANGC} ${LIT_SHADER_SOURCE} -entry vertexMain -target spirv -profile spirv_1_4 -g -o "${SPV_OUTPUT_DIR}/lit.vert.spv"
     DEPENDS "${LIT_SHADER_SOURCE}"
     COMMENT "Compiling vertex shader lit.vert.spv"
     VERBATIM
@@ -30,7 +30,7 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT "${SPV_OUTPUT_DIR}/lit.frag.spv"
-    COMMAND ${SLANGC} ${LIT_SHADER_SOURCE} -entry fragmentMain -target spirv -profile spirv_1_4 -o "${SPV_OUTPUT_DIR}/lit.frag.spv"
+    COMMAND ${SLANGC} ${LIT_SHADER_SOURCE} -entry fragmentMain -target spirv -profile spirv_1_4 -g -o "${SPV_OUTPUT_DIR}/lit.frag.spv"
     DEPENDS "${LIT_SHADER_SOURCE}"
     COMMENT "Compiling fragment shader lit.frag.spv"
     VERBATIM

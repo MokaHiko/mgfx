@@ -148,7 +148,7 @@ public struct LitMaterial : IMaterial {
     public CookTorrenceBRDF prepare(SurfaceGeometry sg) {
         CookTorrenceBRDF brdf;
 
-        brdf.albedo = pow(albedo.Sample(sg.uv).rgb, float3(2.2));
+        brdf.albedo = albedo.Sample(sg.uv).rgb;
         brdf.albedo *= albedo_factor;
 
         brdf.metallic = metallic_roughness_map.Sample(sg.uv).b;
@@ -158,14 +158,13 @@ public struct LitMaterial : IMaterial {
     }
 
     public float3 emissive(SurfaceGeometry sg) {
-        return pow(emissive_map.Sample(sg.uv).rgb, float3(2.2)) *
-                emissive_factor * emissive_strength;
+        return emissive_map.Sample(sg.uv).rgb * emissive_factor * emissive_strength;
     }
 
     public float3 ambient(SurfaceGeometry sg) {
         // Ambient & AO lighting
         float ao = occlusion_map.Sample(sg.uv).r * ao_factor;
-        return mul(float3(0.00003), albedo.Sample(sg.uv).rgb) * ao;
+        return mul(float3(0.000001), albedo.Sample(sg.uv).rgb) * ao;
     }
 };
 

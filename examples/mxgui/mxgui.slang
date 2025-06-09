@@ -8,7 +8,7 @@ struct VOut {
 [shader("vertex")]
 VOut vertexMain(mgfx::Vertex input) {
     VOut output;
-    output.position = mul(mgfx::u.proj, float4(input.position, 1.0f));
+    output.position = mul(mgfx::proj(), float4(input.position, 1.0f));
     output.uv = input.uv;
     return output;
 }

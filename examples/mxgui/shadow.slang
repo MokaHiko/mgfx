@@ -6,10 +6,10 @@ struct VOut {
 
 [shader("vertex")]
 VOut vertexMain(mgfx::Vertex input) {
-    VOut output;
-    output.position = mul(mgfx::u.proj,
-                      mul(mgfx::u.view,
-                      mul(mgfx::u.model, float4(input.position, 1.0f))));
+    VOut output = {0};
+    output.position = mul(mgfx::proj(),
+                      mul(mgfx::view(),
+                      mul(mgfx::transform(), float4(input.position, 1.0f))));
 
     return output;
 }

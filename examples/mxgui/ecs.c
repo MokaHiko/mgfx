@@ -90,7 +90,7 @@ mx_ecs_iter mx_ecs_query_iter_impl(mx_component_id id) {
     mx_component_container* container = component_info_find(&s_components_info, id);
 
     if (!container) {
-        return (mx_ecs_iter){};
+        return (mx_ecs_iter){0};
     }
 
     return (mx_ecs_iter){

@@ -1,7 +1,7 @@
 #ifndef MGFX_H_
 #define MGFX_H_
 
-#include "defines.h"
+#include <mgfx/defines.h>
 #include <mx/mx.h>
 
 typedef struct MX_API mgfx_pn32f {

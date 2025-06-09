@@ -22,19 +22,19 @@ StructuredBuffer<mgfx::PointLight> pointLights;
 VOut vertexMain(mgfx::Vertex input) {
     VOut output;
 
-    float4x4 proj_view = mul(mgfx::u.proj, mgfx::u.view);
+    float4x4 proj_view = mul(mgfx::proj(), mgfx::view());
 
-    output.sg.normal = normalize(mul(transpose((float3x3)mgfx::u.model_inv), input.normal));
     output.sg.uv = input.uv;
 
-    output.sg.frag_position = mul(mgfx::u.model, float4(input.position, 1.0)).xyz;
+    output.sg.frag_position = mul(mgfx::transform(), float4(input.position, 1.0)).xyz;
 
     output.position = mul(proj_view, float4(output.sg.frag_position, 1.0f));
     output.color = input.color;
 
-    float3 t = normalize(mul((float3x3)mgfx::u.model, input.tangent.xyz));
-    float3 b = input.tangent.w * cross(output.sg.normal, input.tangent.xyz);
-    output.sg.TBN = float3x3(t, b, output.sg.normal);
+    output.sg.normal = normalize(mul(transpose((float3x3)mgfx::inverse_transform()), input.normal));
+    float3 t = normalize(mul((float3x3)mgfx::transform(), input.tangent.xyz));
+    float3 b = input.tangent.w * cross(output.sg.normal, t);
+    output.sg.TBN = transpose(float3x3(t, b, output.sg.normal));
 
     return output;
 }
@@ -56,7 +56,6 @@ FOut fragmentMain(VOut input) {
     float3 wo = normalize(scene.camera_position - input.sg.frag_position);
 
     float3 lo = 0;
-
     lo += dirLight.illuminate(sg, brdf, wo);
 
     for (int i = 0; i < scene.point_light_count; i++) {
