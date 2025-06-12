@@ -5,18 +5,18 @@
 #include <mx/mx.h>
 
 typedef struct MX_API mgfx_pn32f {
-    float position[3];
-    float normal[3];
+  float position[3];
+  float normal[3];
 } pn32f;
 
 typedef union MX_API mgfx_pntuc32f {
-    struct {
-        float position[3];
-        float normal[3];
-        float uv[2];
-        float color[4];
-        float tangent[4];
-    };
+  struct {
+    float position[3];
+    float normal[3];
+    float uv[2];
+    float color[4];
+    float tangent[4];
+  };
 
 } mgfx_pntuc32f;
 
@@ -44,9 +44,9 @@ extern "C" { // Ensure C++ linkage compatibility
 #endif
 
 typedef MX_API struct {
-    char name[256];
-    void* nwh;
-    int width, height;
+  char name[256];
+  void* nwh;
+  int width, height;
 } mgfx_init_info;
 
 /**
@@ -69,12 +69,12 @@ MX_API void mgfx_shutdown();
 
 MX_API void mgfx_reset(uint32_t width, uint32_t height);
 
-static const uint64_t mgfx_invalid_handle = UINT64_MAX;
+static const uint64_t mgfx_invalid_handle = 0;
 #define MGFX_INVALID_HANDLE ((uint64_t)mgfx_invalid_handle)
-#define MGFX_HANDLE(name)                                                                \
-    typedef MX_API struct name {                                                         \
-        uint64_t idx;                                                                    \
-    } name;
+#define MGFX_HANDLE(name)                                                      \
+  typedef MX_API struct name {                                                 \
+    uint64_t idx;                                                              \
+  } name;
 
 /**
  * @brief Shader handle.
@@ -117,7 +117,7 @@ MGFX_HANDLE(mgfx_sbh)
 /*MGFX_HANDLE(mgfx_tbh)*/
 
 /** @brief Descriptor handle */
-MGFX_HANDLE(mgfx_dh)
+MGFX_HANDLE(mgfx_uh)
 
 /**
  * @brief Handle for an image resource
@@ -140,9 +140,9 @@ MGFX_HANDLE(mgfx_fbh)
 MGFX_HANDLE(mgfx_th)
 
 // Built in textures
-extern mgfx_th MGFX_WHITE_TEXTURE;
-extern mgfx_th MGFX_BLACK_TEXTURE;
-extern mgfx_th MGFX_LOCAL_NORMAL_TEXTURE;
+extern mgfx_th MGFX_WHITE_TH;
+extern mgfx_th MGFX_BLACK_TH;
+extern mgfx_th MGFX_LOCAL_NORMAL_TH;
 
 /**
  * @brief Renders debug text on the backbuffer.
@@ -150,24 +150,24 @@ extern mgfx_th MGFX_LOCAL_NORMAL_TEXTURE;
  */
 MX_API void mgfx_debug_draw_text(int32_t x, int32_t y, const char* fmt, ...);
 
-MX_API MX_NO_DISCARD mgfx_vbh mgfx_vertex_buffer_create(const void* data,
-                                                        size_t len,
-                                                        const mgfx_vertex_layout* vl);
+MX_API MX_NO_DISCARD mgfx_vbh mgfx_vertex_buffer_create(
+    const void* data, size_t len, const mgfx_vertex_layout* vl);
 
-MX_API MX_NO_DISCARD mgfx_ibh mgfx_index_buffer_create(const void* data, size_t len);
-MX_API MX_NO_DISCARD mgfx_ubh mgfx_uniform_buffer_create(const void* data, size_t len);
-MX_API MX_NO_DISCARD mgfx_sbh mgfx_storage_buffer_create(const void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_ibh mgfx_index_buffer_create(const void* data,
+                                                       size_t len);
+MX_API MX_NO_DISCARD mgfx_ubh mgfx_uniform_buffer_create(const void* data,
+                                                         size_t len);
+MX_API MX_NO_DISCARD mgfx_sbh mgfx_storage_buffer_create(const void* data,
+                                                         size_t len);
 
-MX_API void mgfx_transient_vertex_buffer_allocate(const void* data,
-                                                  size_t len,
+MX_API void mgfx_transient_vertex_buffer_allocate(const void* data, size_t len,
                                                   mgfx_transient_vb* out);
 
-MX_API void mgfx_transient_index_buffer_allocate(const void* data,
-                                                 size_t len,
+MX_API void mgfx_transient_index_buffer_allocate(const void* data, size_t len,
                                                  mgfx_transient_buffer* out);
 
-MX_API void
-mgfx_buffer_update(uint64_t buffer_idx, const void* data, size_t size, size_t offset);
+MX_API void mgfx_buffer_update(uint64_t buffer_idx, const void* data,
+                               size_t size, size_t offset);
 MX_API void mgfx_buffer_destroy(uint64_t buffer_idx);
 
 MX_API MX_NO_DISCARD mgfx_sh mgfx_shader_create(const char* path);
@@ -175,48 +175,44 @@ MX_API void mgfx_shader_destroy(mgfx_sh sh);
 
 MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_compute(mgfx_sh csh);
 
-MX_API MX_NO_DISCARD mgfx_ph
-mgfx_program_create_graphics_impl(mgfx_sh vsh,
-                                  mgfx_sh fsh,
-                                  const mgfx_graphics_create_info* ex_info);
-#define mgfx_program_create_graphics(vsh, fsh, ...)                                      \
-    mgfx_program_create_graphics_impl(vsh, fsh, &(mgfx_graphics_create_info)__VA_ARGS__)
+MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics(
+    mgfx_sh vsh, mgfx_sh fsh, mgfx_graphics_create_info ex_info);
 
 // TODO: Depricate
-// MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh, mgfx_sh fsh);
+// MX_API MX_NO_DISCARD mgfx_ph mgfx_program_create_graphics(mgfx_sh vsh,
+// mgfx_sh fsh);
 MX_API void mgfx_program_destroy(mgfx_ph ph);
 
 MX_API MX_NO_DISCARD mgfx_imgh mgfx_image_create(const mgfx_image_info* info,
                                                  uint32_t usage);
 MX_API void mgfx_image_destroy(mgfx_imgh imgh);
 
-MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_memory(const mgfx_image_info* info,
-                                                             uint32_t filter,
-                                                             const void* data,
-                                                             size_t len);
-MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_image(mgfx_imgh img,
-                                                            const uint32_t filter);
+MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_memory(
+    const mgfx_image_info* info, uint32_t filter, const void* data, size_t len);
+MX_API MX_NO_DISCARD mgfx_th
+mgfx_texture_create_from_image(mgfx_imgh img, const uint32_t filter);
 MX_API MX_NO_DISCARD mgfx_th mgfx_texture_create_from_path(const char* path,
                                                            mgfx_format format);
 MX_API void mgfx_texture_destroy(mgfx_th th, mx_bool release_image);
 
-MX_API MX_NO_DISCARD mgfx_fbh mgfx_framebuffer_create(mgfx_imgh* color_attachments,
-                                                      uint32_t color_attachment_count,
-                                                      mgfx_imgh depth_attachment);
+MX_API MX_NO_DISCARD mgfx_fbh mgfx_framebuffer_create(
+    mgfx_imgh* color_attachments, uint32_t color_attachment_count,
+    mgfx_imgh depth_attachment);
 MX_API void mgfx_framebuffer_destroy(mgfx_fbh fbh);
 
-MX_API MX_NO_DISCARD mgfx_dh mgfx_descriptor_create(const char* name, uint32_t type);
-MX_API void mgfx_descriptor_destroy(mgfx_dh dh);
+MX_API MX_NO_DISCARD mgfx_uh mgfx_uniform_create(const char* name,
+                                                 uint32_t type);
+MX_API void mgfx_uniform_destroy(mgfx_uh uh);
 
-MX_API void mgfx_set_buffer(mgfx_dh dh, mgfx_ubh ubh);
-MX_API void mgfx_set_texture(mgfx_dh dh, mgfx_th th);
+MX_API void mgfx_set_buffer(mgfx_uh uh, mgfx_ubh ubh);
+MX_API void mgfx_set_texture(mgfx_uh uh, mgfx_th th);
 
-MX_API MX_NO_DISCARD mgfx_dh mgfx_descriptor_create_and_set_uniform_buffer(const char* name,
-                                                                   mgfx_ubh ubh);
-MX_API MX_NO_DISCARD mgfx_dh mgfx_descriptor_create_and_set_storage_buffer(const char* name,
-                                                                   mgfx_sbh ubh);
-MX_API MX_NO_DISCARD mgfx_dh mgfx_descriptor_create_and_set_texture(const char* name,
-                                                                    mgfx_th th);
+MX_API MX_NO_DISCARD mgfx_uh
+mgfx_uniform_create_and_set_uniform_buffer(const char* name, mgfx_ubh ubh);
+MX_API MX_NO_DISCARD mgfx_uh
+mgfx_uniform_create_and_set_storage_buffer(const char* name, mgfx_sbh ubh);
+MX_API MX_NO_DISCARD mgfx_uh
+mgfx_uniform_create_and_set_texture(const char* name, mgfx_th th);
 
 MX_API void mgfx_set_view_clear(uint8_t target, float* color_4);
 MX_API void mgfx_set_view_target(uint8_t target, mgfx_fbh fb);
@@ -231,7 +227,7 @@ MX_API void mgfx_bind_transient_vertex_buffer(mgfx_transient_vb tvb);
 MX_API void mgfx_bind_index_buffer(mgfx_ibh ibh);
 MX_API void mgfx_bind_transient_index_buffer(mgfx_transient_buffer tib);
 
-MX_API void mgfx_bind_descriptor(mgfx_dh dh);
+MX_API void mgfx_bind_descriptor(mgfx_uh uh);
 
 MX_API void mgfx_submit(uint8_t target, mgfx_ph ph);
 

@@ -8,10 +8,10 @@
 #define APP_WIDTH  2560
 #define APP_HEIGHT 1440
 
-typedef enum mgfx_camera_type {
+typedef enum camera_type {
     mgfx_camera_type_perspective = 0,
     mgfx_camera_type_orthographic = 1,
-} mgfx_camera_type;
+} camera_type;
 
 typedef struct camera {
     mx_mat4 view;
@@ -29,10 +29,10 @@ typedef struct camera {
     float yaw;
     float pitch;
 
-    mgfx_camera_type type;
+    camera_type type;
 } camera;
 
-void camera_create(mgfx_camera_type type, camera* cam);
+void camera_create(camera_type type, camera* cam);
 void camera_update(camera* cam);
 
 extern camera g_example_camera;
@@ -42,8 +42,6 @@ extern mgfx_th s_default_normal_map;
 
 extern double MGFX_TIME;
 extern double MGFX_TIME_DELTA_TIME;
-
-mgfx_th load_texture_2d_from_path(const char* path, mgfx_format format);
 
 int mgfx_example_app();
 

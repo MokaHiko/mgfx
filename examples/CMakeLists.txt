@@ -27,12 +27,4 @@ target_link_libraries(text_rendering PRIVATE ex_common)
 
 add_subdirectory(gltf_loading)
 
-# add_executable(shadows shadows/shadows.c)
-# target_link_libraries(shadows PRIVATE gltf_loader ex_common)
-
 add_subdirectory(mxgui)
-
-add_subdirectory(post_processing)
-
-# add_executable(panoramic_viewer panoramic_viewer/panoramic_viewer.c)
-# target_link_libraries(panoramic_viewer PRIVATE ex_common)

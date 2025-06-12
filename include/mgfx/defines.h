@@ -10,6 +10,14 @@
 extern "C" { // Ensure C++ linkage compatibility
 #endif
 
+typedef enum mgfx_min_capabilities {
+    MGFX_SHADER_MAX_DESCRIPTOR_SET = 1,
+    MGFX_SHADER_MAX_DESCRIPTOR_BINDING = 32,
+    MGFX_SHADER_MAX_PUSH_CONSTANTS = 4,
+
+    MGFX_MAX_DRAW_COUNT = 256,
+} mgfx_min_capabilities;
+
 typedef enum mgfx_error_code {
     MGFX_WARN_SWAPCHAIN_RESIZE,
     MGFX_ERROR_MISTMATCHED_UNIFORMS,
@@ -33,12 +41,6 @@ typedef enum mgfx_filter_type {
 
 enum { MGFX_DEFAULT_VIEW_TARGET = 0xFF - 1 };
 
-enum MGFX_SHADER_CONSTANTS {
-    MGFX_SHADER_MAX_DESCRIPTOR_SET = 1,
-    MGFX_SHADER_MAX_DESCRIPTOR_BINDING = 32,
-    MGFX_SHADER_MAX_PUSH_CONSTANTS = 4,
-};
-
 typedef enum mgfx_shader_stage {
     MGFX_SHADER_STAGE_VERTEX = 0,
     MGFX_SHADER_STAGE_FRAGMENT,
@@ -52,8 +54,10 @@ typedef enum mgfx_uniform_type {
     MGFX_UNIFORM_TYPE_COMBINED_IMAGE_SAMPLER = 1,
     MGFX_UNIFORM_TYPE_SAMPLED_IMAGE = 2,
     MGFX_UNIFORM_TYPE_STORAGE_IMAGE = 3,
-    MGFX_UNIFORM_TYPE_UNIFORM_TEXEL_BUFFER = 4,
-    MGFX_UNIFORM_TYPE_STORAGE_TEXEL_BUFFER = 5,
+
+    // MGFX_UNIFORM_TYPE_UNIFORM_TEXEL_BUFFER = 4,
+    // MGFX_UNIFORM_TYPE_STORAGE_TEXEL_BUFFER = 5,
+
     MGFX_UNIFORM_TYPE_UNIFORM_BUFFER = 6,
     MGFX_UNIFORM_TYPE_STORAGE_BUFFER = 7,
 
@@ -96,7 +100,7 @@ void mgfx_vertex_layout_end(mgfx_vertex_layout* vl);
 
 typedef MX_API struct mgfx_image_info {
     mx_strv name;
-    mgfx_format format; // VkFormat
+    mgfx_format format;
 
     uint32_t width;
     uint32_t height;
@@ -105,14 +109,14 @@ typedef MX_API struct mgfx_image_info {
     mx_bool cube_map;
 } mgfx_image_info;
 
-typedef struct MX_API mgfx_transient_buffer {
+typedef MX_API struct mgfx_transient_buffer {
     uint32_t requested_size; // Size requested on allocation
     uint32_t actual_size;    // Allocation size that may include padding
     uint32_t offset;
     mx_ptr_t buffer_handle; // VkBuffer
 } mgfx_transient_buffer;
 
-typedef struct MX_API mgfx_transient_vb {
+typedef MX_API struct mgfx_transient_vb {
     mgfx_transient_buffer tb;
     const mgfx_vertex_layout* vl;
 } mgfx_transient_vb;
@@ -135,7 +139,7 @@ typedef enum mgfx_cull_mode {
     MGFX_CULL_FLAGS_MAX_ENUM = 0x7FFFFFFF
 } mgfx_cull_mode;
 
-typedef struct MX_API mgfx_graphics_create_info {
+typedef MX_API struct mgfx_graphics_create_info {
     mx_str name;
 
     mgfx_primitive_topology primitive_topology;
@@ -144,8 +148,6 @@ typedef struct MX_API mgfx_graphics_create_info {
 
     mx_bool instanced;
     mx_bool destroy_shaders;
-
-    const mgfx_vertex_layout* vl;
 } mgfx_graphics_create_info;
 
 #ifdef __cplusplus

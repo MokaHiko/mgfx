@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.0...3.10)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-add_executable(mxgui main.c asset.c ecs.c mx_material.c renderer.c)
+add_executable(mxgui main.c mxgui.c asset.c ecs.c mx_material.c renderer.c)
 target_link_libraries(mxgui PRIVATE ex_common gltf_loader)
 
 find_program(SLANGC slangc HINTS ENV VULKAN_SDK PATH_SUFFIXES bin)

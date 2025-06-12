@@ -17,7 +17,6 @@ Sampler2D fs_texture;
 
 [shader("fragment")]
 float4 fragmentMain(VOut input) {
-	float3 hdr_color = fs_texture.Sample(input.uv).rgb;
-
-    return float4(hdr_color, 1.0);
+	float3 color = fs_texture.Sample(input.uv).rgb;
+    return float4(color, 1.0);
 }
